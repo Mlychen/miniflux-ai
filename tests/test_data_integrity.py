@@ -2,9 +2,10 @@ import json
 import threading
 import unittest
 from pathlib import Path
-from unittest.mock import patch
 
 from common.config import Config
+from common.ai_news_repository import AiNewsRepository
+from common.entries_repository import EntriesRepository
 from core.generate_daily_news import generate_daily_news
 from core.process_entries import process_entry
 
@@ -27,6 +28,20 @@ class DummyMinifluxClient:
 
     def refresh_feed(self, feed_id):
         self.refreshed.append(feed_id)
+
+
+class DummyLLMGateway:
+    def __init__(self, outputs):
+        self._outputs = list(outputs)
+        self.calls = []
+        self._lock = threading.Lock()
+
+    def get_result(self, prompt, request, logger=None):
+        with self._lock:
+            self.calls.append((prompt, request))
+            if not self._outputs:
+                raise RuntimeError('No more dummy outputs configured')
+            return self._outputs.pop(0)
 
 
 class TestDataIntegrity(unittest.TestCase):
@@ -68,16 +83,16 @@ class TestDataIntegrity(unittest.TestCase):
             },
         }
 
-        with patch("core.process_entries.get_ai_result", return_value="summary result"):
-            process_entry(
-                client,
-                entry,
-                config,
-                llm_client=object(),
-                logger=type("L", (), {"info": lambda *a, **k: None, "error": lambda *a, **k: None})(),
-                entries_file=str(entries_file),
-                lock=threading.Lock(),
-            )
+        llm_gateway = DummyLLMGateway(["summary result"])
+        entries_repository = EntriesRepository(path=str(entries_file), lock=threading.Lock())
+        process_entry(
+            client,
+            entry,
+            config,
+            llm_client=llm_gateway,
+            logger=type("L", (), {"info": lambda *a, **k: None, "error": lambda *a, **k: None})(),
+            entries_repository=entries_repository,
+        )
 
         saved = json.loads(entries_file.read_text(encoding="utf-8"))
         self.assertEqual(len(saved), 1)
@@ -85,6 +100,7 @@ class TestDataIntegrity(unittest.TestCase):
         self.assertEqual(len(client.updated), 1)
         self.assertEqual(client.updated[0][0], 101)
         self.assertIn("original content", client.updated[0][1])
+        self.assertEqual(len(llm_gateway.calls), 1)
 
     def test_process_entry_skips_when_already_processed(self):
         entries_file = TMP_DIR / "entries_skip.json"
@@ -116,20 +132,21 @@ class TestDataIntegrity(unittest.TestCase):
             },
         }
 
-        with patch("core.process_entries.get_ai_result", return_value="should-not-run"):
-            process_entry(
-                client,
-                entry,
-                config,
-                llm_client=object(),
-                logger=type("L", (), {"info": lambda *a, **k: None, "error": lambda *a, **k: None})(),
-                entries_file=str(entries_file),
-                lock=threading.Lock(),
-            )
+        llm_gateway = DummyLLMGateway(["should-not-run"])
+        entries_repository = EntriesRepository(path=str(entries_file), lock=threading.Lock())
+        process_entry(
+            client,
+            entry,
+            config,
+            llm_client=llm_gateway,
+            logger=type("L", (), {"info": lambda *a, **k: None, "error": lambda *a, **k: None})(),
+            entries_repository=entries_repository,
+        )
 
         saved = json.loads(entries_file.read_text(encoding="utf-8"))
         self.assertEqual(saved, [])
         self.assertEqual(client.updated, [])
+        self.assertEqual(len(llm_gateway.calls), 0)
 
     def test_generate_daily_news_writes_output_and_clears_entries(self):
         entries_file = TMP_DIR / "daily_entries.json"
@@ -160,15 +177,17 @@ class TestDataIntegrity(unittest.TestCase):
         client = DummyMinifluxClient()
         client.feeds = [{"id": 77, "title": "Newsᴬᴵ for you"}]
 
-        with patch("core.generate_daily_news.get_ai_result", side_effect=["hello", "block", "sum"]):
-            generate_daily_news(
-                client,
-                config,
-                llm_client=object(),
-                logger=type("L", (), {"info": lambda *a, **k: None, "debug": lambda *a, **k: None, "error": lambda *a, **k: None, "warning": lambda *a, **k: None})(),
-                entries_file=str(entries_file),
-                ai_news_file=str(ai_news_file),
-            )
+        llm_gateway = DummyLLMGateway(["hello", "block", "sum"])
+        entries_repository = EntriesRepository(path=str(entries_file))
+        ai_news_repository = AiNewsRepository(path=str(ai_news_file))
+        generate_daily_news(
+            client,
+            config,
+            llm_client=llm_gateway,
+            logger=type("L", (), {"info": lambda *a, **k: None, "debug": lambda *a, **k: None, "error": lambda *a, **k: None, "warning": lambda *a, **k: None})(),
+            ai_news_repository=ai_news_repository,
+            entries_repository=entries_repository,
+        )
 
         result = json.loads(ai_news_file.read_text(encoding="utf-8"))
         self.assertIn("hello", result)
@@ -176,6 +195,7 @@ class TestDataIntegrity(unittest.TestCase):
         self.assertIn("block", result)
         self.assertEqual(json.loads(entries_file.read_text(encoding="utf-8")), [])
         self.assertEqual(client.refreshed, [77])
+        self.assertEqual(len(llm_gateway.calls), 3)
 
 
 if __name__ == "__main__":

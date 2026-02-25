@@ -1,74 +1,13 @@
-from markdownify import markdownify as md
-
-from openai import OpenAI
-from google import genai
-from google.genai import types
+from adapters.llm_gateway import LLMGateway
 
 
 def build_llm_client(config):
-    provider = config.llm_provider or 'openai'
-    if provider == 'gemini':
-        return genai.Client(
-            http_options=types.HttpOptions(base_url=config.llm_base_url),
-            api_key=config.llm_api_key,
-        )
-    return OpenAI(base_url=config.llm_base_url, api_key=config.llm_api_key)
+    return LLMGateway(config)
 
 
 def get_ai_result(llm_client, config, prompt: str, request: str, logger=None):
-    if config.llm_max_length and len(request) > config.llm_max_length:
-        request = request[: config.llm_max_length]
+    if hasattr(llm_client, 'get_result'):
+        return llm_client.get_result(prompt, request, logger)
 
-    provider = config.llm_provider or 'openai'
-
-    if provider == "gemini":
-        try:
-            if "${content}" in prompt:
-                instruction = ["You are a helpful assistant."]
-                contents = prompt.replace("${content}", md(request))
-            else:
-                instruction = [prompt]
-                contents = "The following is the input content:\n---\n " + md(request)
-
-            response = llm_client.models.generate_content(
-                model=config.llm_model,
-                contents=contents,
-                config=types.GenerateContentConfig(
-                    system_instruction=instruction,
-                ),
-            )
-            return response.text
-        except Exception as e:
-            if logger:
-                logger.error(f"Error in get_ai_result (Gemini): {e}")
-            raise
-    else:
-        if "${content}" in prompt:
-            messages = [
-                {"role": "system", "content": "You are a helpful assistant."},
-                {
-                    "role": "user",
-                    "content": prompt.replace("${content}", md(request)),
-                },
-            ]
-        else:
-            messages = [
-                {"role": "system", "content": prompt},
-                {
-                    "role": "user",
-                    "content": "The following is the input content:\n---\n "
-                    + md(request),
-                },
-            ]
-
-        try:
-            completion = llm_client.chat.completions.create(
-                model=config.llm_model, messages=messages, timeout=config.llm_timeout
-            )
-
-            response_content = completion.choices[0].message.content
-            return response_content
-        except Exception as e:
-            if logger:
-                logger.error(f"Error in get_ai_result (OpenAI): {e}")
-            raise
+    # Backward-compatible fallback for callers that still pass a raw SDK client.
+    return build_llm_client(config).get_result(prompt, request, logger)

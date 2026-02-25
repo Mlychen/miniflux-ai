@@ -39,6 +39,42 @@ This project integrates with Miniflux to fetch RSS feed content via API or webho
   </tr>
 </table>
 
+## Architecture
+
+- **Gateway layer (`adapters/`)**
+  - Encapsulates Miniflux and LLM vendor APIs behind stable protocols.
+- **Usecase layer (`core/`)**
+  - Implements polling, webhook batch processing, summary generation, and AI news workflows.
+- **Repository layer (`common/*_repository.py`)**
+  - Handles JSON persistence (`entries.json`, `ai_news.json`) with lock-safe operations.
+- **Application wiring (`main.py`, `myapp/`)**
+  - Composes gateways + repositories and injects them into usecases/routes.
+
+Dependency direction: `gateway -> usecase -> repository` (runtime wiring done at app/bootstrap boundary).
+
+### App Factory Integration
+
+`create_app(...)` now takes repository dependencies directly. Typical integration:
+
+```python
+import threading
+
+from common.ai_news_repository import AiNewsRepository
+from common.entries_repository import EntriesRepository
+from myapp import create_app
+
+shared_lock = threading.Lock()
+app = create_app(
+    config=config,
+    miniflux_client=miniflux_client,
+    llm_client=llm_client,
+    logger=logger,
+    entry_processor=entry_processor,
+    entries_repository=EntriesRepository(path='entries.json', lock=shared_lock),
+    ai_news_repository=AiNewsRepository(path='ai_news.json', lock=shared_lock),
+)
+```
+
 ## Requirements
 
 - Python 3.11+
@@ -131,13 +167,15 @@ docker-compose up -d
 
 1. Create virtual environment: `uv venv .venv`
 2. Install dependencies: `uv pip install -r requirements-dev.txt`
-3. Run unit tests: `uv run python -m unittest -q tests.test_filter tests.test_config tests.test_data_integrity`
+3. Run unit tests:
+   `uv run python -m unittest -q tests.test_filter tests.test_config tests.test_data_integrity tests.test_webhook_api tests.test_concurrency_integrity tests.test_ai_news_api tests.test_batch_usecase tests.test_service_containers tests.test_adapters tests.test_core_helpers tests.test_ai_news_repository tests.test_entries_repository`
 4. Run app: `uv run python main.py`
 
 ### Use pip (alternative)
 
 1. Install development dependencies: `pip install -r requirements-dev.txt`
-2. Run unit tests: `python -m unittest -q tests.test_filter tests.test_config tests.test_data_integrity`
+2. Run unit tests:
+   `python -m unittest -q tests.test_filter tests.test_config tests.test_data_integrity tests.test_webhook_api tests.test_concurrency_integrity tests.test_ai_news_api tests.test_batch_usecase tests.test_service_containers tests.test_adapters tests.test_core_helpers tests.test_ai_news_repository tests.test_entries_repository`
 3. Optional: run `pytest -q` if you prefer pytest runner.
 
 ## Testing Modules and Skill
@@ -167,6 +205,10 @@ pre code {
 ## Contributing
 
 Feel free to fork this repository and submit pull requests. Contributions and issues are welcome!
+
+## Changelog
+
+- See `CHANGELOG.md` for API and layering changes.
 
 <a href="https://github.com/Qetesh/miniflux-ai/graphs/contributors">
   <img src="https://contrib.rocks/image?repo=Qetesh/miniflux-ai" />

@@ -25,11 +25,79 @@ This is the single entry point for test execution, live verification, and LLM te
 - Command:
   - `uv run python -m unittest -q tests.test_data_integrity`
 
+### webhook-api
+
+- Scope: webhook signature validation and API status-code contract.
+- Command:
+  - `uv run python -m unittest -q tests.test_webhook_api`
+
+### concurrency
+
+- Scope:
+  - concurrent `entries.json` write integrity
+  - batch fetch path processes each unread entry
+- Command:
+  - `uv run python -m unittest -q tests.test_concurrency_integrity`
+
+### ai-news-api
+
+- Scope: `/rss/ai-news` output and `ai_news.json` consume-and-clear behavior.
+- Command:
+  - `uv run python -m unittest -q tests.test_ai_news_api`
+
+### batch-usecase
+
+- Scope:
+  - shared batch-processing orchestration for polling and webhook paths
+  - failure aggregation behavior in concurrent execution
+- Command:
+  - `uv run python -m unittest -q tests.test_batch_usecase`
+
+### service-containers
+
+- Scope:
+  - typed Flask service container (`AppServices`)
+  - typed bootstrap runtime container (`RuntimeServices`)
+- Command:
+  - `uv run python -m unittest -q tests.test_service_containers`
+
+### adapters
+
+- Scope:
+  - Miniflux gateway call delegation
+  - LLM gateway provider-specific request building
+- Command:
+  - `uv run python -m unittest -q tests.test_adapters`
+
+### core-helpers
+
+- Scope:
+  - entry rendering helpers
+  - AI news composition and feed-matching helpers
+- Command:
+  - `uv run python -m unittest -q tests.test_core_helpers`
+
+### ai-news-repository
+
+- Scope:
+  - `ai_news.json` repository save/consume semantics
+  - missing-file fallback behavior
+- Command:
+  - `uv run python -m unittest -q tests.test_ai_news_repository`
+
+### entries-repository
+
+- Scope:
+  - `entries.json` repository append/read/clear semantics
+  - missing-file fallback behavior
+- Command:
+  - `uv run python -m unittest -q tests.test_entries_repository`
+
 ### unit-all
 
 - Scope: all local unit modules.
 - Command:
-  - `uv run python -m unittest -q tests.test_filter tests.test_config tests.test_data_integrity`
+  - `uv run python -m unittest -q tests.test_filter tests.test_config tests.test_data_integrity tests.test_webhook_api tests.test_concurrency_integrity tests.test_ai_news_api tests.test_batch_usecase tests.test_service_containers tests.test_adapters tests.test_core_helpers tests.test_ai_news_repository tests.test_entries_repository`
 
 ## 2) Live Integration Flow
 
@@ -55,7 +123,7 @@ For release gating and 24h observation criteria, use:
 ### Prompt A: Run one module
 
 ```text
-Run miniflux-ai test module: {filter|config|integrity}.
+Run miniflux-ai test module: {filter|config|integrity|webhook-api|concurrency|ai-news-api|batch-usecase|service-containers|adapters|core-helpers|ai-news-repository|entries-repository}.
 Use uv commands.
 Do not modify code.
 Return:
@@ -69,7 +137,7 @@ Return:
 
 ```text
 Run:
-uv run python -m unittest -q tests.test_filter tests.test_config tests.test_data_integrity
+uv run python -m unittest -q tests.test_filter tests.test_config tests.test_data_integrity tests.test_webhook_api tests.test_concurrency_integrity tests.test_ai_news_api tests.test_batch_usecase tests.test_service_containers tests.test_adapters tests.test_core_helpers tests.test_ai_news_repository tests.test_entries_repository
 
 Return:
 1) summary counts

@@ -1,18 +1,33 @@
 import concurrent.futures
+from dataclasses import dataclass
 import threading
 import time
 import traceback
 
-import miniflux
 import schedule
 
+from adapters import LLMGateway, MinifluxGateway
+from adapters.protocols import LLMGatewayProtocol, MinifluxGatewayProtocol
+from common.ai_news_repository import AiNewsRepository
 from common.config import Config
+from common.entries_repository import EntriesRepository
 from common.logger import get_logger
+from core.ai_news_helpers import has_ai_news_feed
 from core.fetch_unread_entries import fetch_unread_entries
 from core.generate_daily_news import generate_daily_news
-from core.get_ai_result import build_llm_client
 from core.process_entries import build_rate_limited_processor
 from myapp import create_app
+
+
+@dataclass(frozen=True)
+class RuntimeServices:
+    config: Config
+    logger: object
+    miniflux_client: MinifluxGatewayProtocol
+    llm_client: LLMGatewayProtocol
+    entry_processor: object
+    entries_repository: EntriesRepository
+    ai_news_repository: AiNewsRepository
 
 
 def wait_for_miniflux(miniflux_client, logger):
@@ -27,14 +42,13 @@ def wait_for_miniflux(miniflux_client, logger):
 
 
 def my_schedule(services):
-    config = services['config']
-    logger = services['logger']
-    miniflux_client = services['miniflux_client']
-    llm_client = services['llm_client']
-    entry_processor = services['entry_processor']
-    entries_file = services['entries_file']
-    ai_news_file = services['ai_news_file']
-    file_lock = services['file_lock']
+    config = services.config
+    logger = services.logger
+    miniflux_client = services.miniflux_client
+    llm_client = services.llm_client
+    entry_processor = services.entry_processor
+    entries_repository = services.entries_repository
+    ai_news_repository = services.ai_news_repository
 
     if config.miniflux_schedule_interval:
         interval = config.miniflux_schedule_interval
@@ -48,14 +62,12 @@ def my_schedule(services):
         entry_processor,
         llm_client,
         logger,
-        entries_file,
-        file_lock,
     )
     schedule.run_all()
 
     if config.ai_news_schedule:
         feeds = miniflux_client.get_feeds()
-        if not any('Newsᴬᴵ for you' in item['title'] for item in feeds):
+        if not has_ai_news_feed(feeds):
             try:
                 miniflux_client.create_feed(category_id=1, feed_url=config.ai_news_url + '/rss/ai-news')
                 logger.info('Successfully created the ai_news feed in Miniflux!')
@@ -69,8 +81,8 @@ def my_schedule(services):
                 config,
                 llm_client,
                 logger,
-                entries_file,
-                ai_news_file,
+                ai_news_repository,
+                entries_repository,
             )
             logger.info(f"Successfully added the ai_news schedule: {ai_schedule}")
 
@@ -85,15 +97,15 @@ def my_schedule(services):
 
 
 def my_flask(services):
-    logger = services['logger']
+    logger = services.logger
     app = create_app(
-        services['config'],
-        services['miniflux_client'],
-        services['llm_client'],
-        services['logger'],
-        services['entry_processor'],
-        services['entries_file'],
-        services['ai_news_file'],
+        config=services.config,
+        miniflux_client=services.miniflux_client,
+        llm_client=services.llm_client,
+        logger=services.logger,
+        entry_processor=services.entry_processor,
+        entries_repository=services.entries_repository,
+        ai_news_repository=services.ai_news_repository,
     )
     logger.info('Starting API')
     app.run(host='0.0.0.0', port=80)
@@ -102,27 +114,31 @@ def my_flask(services):
 def bootstrap(config_path='config.yml'):
     config = Config.from_file(config_path)
     logger = get_logger(config.log_level)
-    miniflux_client = miniflux.Client(config.miniflux_base_url, api_key=config.miniflux_api_key)
-    llm_client = build_llm_client(config)
-    entry_processor = build_rate_limited_processor(config)
+    file_lock = threading.Lock()
+    miniflux_client = MinifluxGateway(config.miniflux_base_url, config.miniflux_api_key)
+    llm_client = LLMGateway(config)
+    entries_file = 'entries.json'
+    entries_repository = EntriesRepository(path=entries_file, lock=file_lock)
+    entry_processor = build_rate_limited_processor(config, entries_repository=entries_repository)
+    ai_news_file = 'ai_news.json'
+    ai_news_repository = AiNewsRepository(path=ai_news_file, lock=file_lock)
 
-    return {
-        'config': config,
-        'logger': logger,
-        'miniflux_client': miniflux_client,
-        'llm_client': llm_client,
-        'entry_processor': entry_processor,
-        'entries_file': 'entries.json',
-        'ai_news_file': 'ai_news.json',
-        'file_lock': threading.Lock(),
-    }
+    return RuntimeServices(
+        config=config,
+        logger=logger,
+        miniflux_client=miniflux_client,
+        llm_client=llm_client,
+        entry_processor=entry_processor,
+        entries_repository=entries_repository,
+        ai_news_repository=ai_news_repository,
+    )
 
 
 if __name__ == '__main__':
     services = bootstrap()
-    wait_for_miniflux(services['miniflux_client'], services['logger'])
+    wait_for_miniflux(services.miniflux_client, services.logger)
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
-        if services['config'].ai_news_schedule or services['config'].miniflux_webhook_secret:
+        if services.config.ai_news_schedule or services.config.miniflux_webhook_secret:
             executor.submit(my_flask, services)
         executor.submit(my_schedule, services)

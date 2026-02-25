@@ -7,10 +7,10 @@
 2. Install dependencies:
    - `uv pip install -r requirements-dev.txt`
 3. Verify tests:
-   - `uv run python -m unittest -q tests.test_filter tests.test_config tests.test_data_integrity`
+   - `uv run python -m unittest -q tests.test_filter tests.test_config tests.test_data_integrity tests.test_webhook_api tests.test_concurrency_integrity tests.test_ai_news_api tests.test_batch_usecase tests.test_service_containers tests.test_adapters tests.test_core_helpers tests.test_ai_news_repository tests.test_entries_repository`
 4. (Alternative without uv)
    - `pip install -r requirements-dev.txt`
-   - `python -m unittest -q tests.test_filter tests.test_config tests.test_data_integrity`
+   - `python -m unittest -q tests.test_filter tests.test_config tests.test_data_integrity tests.test_webhook_api tests.test_concurrency_integrity tests.test_ai_news_api tests.test_batch_usecase tests.test_service_containers tests.test_adapters tests.test_core_helpers tests.test_ai_news_repository tests.test_entries_repository`
 
 ## 2) Runtime Smoke Test
 

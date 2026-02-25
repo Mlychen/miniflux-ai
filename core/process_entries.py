@@ -1,24 +1,31 @@
-import json
-import markdown
 from ratelimit import limits, sleep_and_retry
-import threading
 
+from common.entries_repository import EntriesRepository
+from core.entry_rendering import build_summary_entry, render_agent_response
 from core.entry_filter import filter_entry
-from core.get_ai_result import get_ai_result
 
-file_lock = threading.Lock()
-
-def process_entry(miniflux_client, entry, config, llm_client, logger, entries_file='entries.json', lock=None):
+def process_entry(
+    miniflux_client,
+    entry,
+    config,
+    llm_client,
+    logger,
+    entries_repository=None,
+):
     #Todo change to queue
     llm_result = ''
-    active_lock = lock or file_lock
+    active_entries_repository = entries_repository or EntriesRepository(path='entries.json')
 
     for agent in config.agents.items():
         # filter, if AI is not generating, and in allow_list, or not in deny_list
         if filter_entry(config, agent, entry):
 
             try:
-                response_content = get_ai_result(llm_client, config, agent[1]["prompt"], entry["content"], logger)
+                response_content = llm_client.get_result(
+                    agent[1]["prompt"],
+                    entry["content"],
+                    logger,
+                )
             except Exception as e:
                 logger.error(
                     f"Error processing entry {entry['id']} with agent {agent[0]}: {e}"
@@ -29,47 +36,26 @@ def process_entry(miniflux_client, entry, config, llm_client, logger, entries_fi
 
             # save for ai_summary
             if agent[0] == 'summary':
-                entry_list = {
-                    'datetime': entry['created_at'],
-                    'category': entry['feed']['category']['title'],
-                    'title': entry['title'],
-                    'content': response_content,
-                    'url': entry['url']
-                }
-                with active_lock:
-                    try:
-                        with open(entries_file, 'r', encoding='utf-8') as file:
-                            data = json.load(file)
-                    except (FileNotFoundError, json.JSONDecodeError):
-                        data = []
-                    data.append(entry_list)
-                    with open(entries_file, 'w', encoding='utf-8') as file:
-                        json.dump(data, file, indent=4, ensure_ascii=False)
+                entry_list = build_summary_entry(entry, response_content)
+                active_entries_repository.append_summary_item(entry_list)
 
-            if agent[1]['style_block']:
-                llm_result = (llm_result + '<blockquote>\n  <p><strong>'
-                              + agent[1]['title'] + '</strong> '
-                              + response_content.replace('\n', '').replace('\r', '')
-                              + '\n</p>\n</blockquote><br/>')
-            else:
-                llm_result = llm_result + f"{agent[1]['title']}{markdown.markdown(response_content)}<hr><br />"
+            llm_result = llm_result + render_agent_response(agent[1], response_content)
 
     if len(llm_result) > 0:
         miniflux_client.update_entry(entry['id'], content= llm_result + entry['content'])
 
 
-def build_rate_limited_processor(config):
+def build_rate_limited_processor(config, entries_repository=None):
     @sleep_and_retry
     @limits(calls=config.llm_RPM, period=60)
-    def _processor(miniflux_client, entry, llm_client, logger, entries_file='entries.json', lock=None):
+    def _processor(miniflux_client, entry, llm_client, logger):
         return process_entry(
             miniflux_client,
             entry,
             config,
             llm_client,
             logger,
-            entries_file=entries_file,
-            lock=lock,
+            entries_repository=entries_repository,
         )
 
     return _processor
