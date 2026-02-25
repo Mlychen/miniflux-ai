@@ -3,26 +3,22 @@ import markdown
 from ratelimit import limits, sleep_and_retry
 import threading
 
-from common.config import Config
-from common.logger import logger
 from core.entry_filter import filter_entry
 from core.get_ai_result import get_ai_result
 
-config = Config()
 file_lock = threading.Lock()
 
-@sleep_and_retry
-@limits(calls=config.llm_RPM, period=60)
-def process_entry(miniflux_client, entry):
+def process_entry(miniflux_client, entry, config, llm_client, logger, entries_file='entries.json', lock=None):
     #Todo change to queue
     llm_result = ''
+    active_lock = lock or file_lock
 
     for agent in config.agents.items():
         # filter, if AI is not generating, and in allow_list, or not in deny_list
         if filter_entry(config, agent, entry):
 
             try:
-                response_content = get_ai_result(agent[1]["prompt"], entry["content"])
+                response_content = get_ai_result(llm_client, config, agent[1]["prompt"], entry["content"], logger)
             except Exception as e:
                 logger.error(
                     f"Error processing entry {entry['id']} with agent {agent[0]}: {e}"
@@ -40,14 +36,14 @@ def process_entry(miniflux_client, entry):
                     'content': response_content,
                     'url': entry['url']
                 }
-                with file_lock:
+                with active_lock:
                     try:
-                        with open('entries.json', 'r') as file:
+                        with open(entries_file, 'r', encoding='utf-8') as file:
                             data = json.load(file)
                     except (FileNotFoundError, json.JSONDecodeError):
                         data = []
                     data.append(entry_list)
-                    with open('entries.json', 'w') as file:
+                    with open(entries_file, 'w', encoding='utf-8') as file:
                         json.dump(data, file, indent=4, ensure_ascii=False)
 
             if agent[1]['style_block']:
@@ -59,4 +55,21 @@ def process_entry(miniflux_client, entry):
                 llm_result = llm_result + f"{agent[1]['title']}{markdown.markdown(response_content)}<hr><br />"
 
     if len(llm_result) > 0:
-        dict_result = miniflux_client.update_entry(entry['id'], content= llm_result + entry['content'])
+        miniflux_client.update_entry(entry['id'], content= llm_result + entry['content'])
+
+
+def build_rate_limited_processor(config):
+    @sleep_and_retry
+    @limits(calls=config.llm_RPM, period=60)
+    def _processor(miniflux_client, entry, llm_client, logger, entries_file='entries.json', lock=None):
+        return process_entry(
+            miniflux_client,
+            entry,
+            config,
+            llm_client,
+            logger,
+            entries_file=entries_file,
+            lock=lock,
+        )
+
+    return _processor

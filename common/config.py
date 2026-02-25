@@ -1,8 +1,9 @@
 from yaml import safe_load
 
+
 class Config:
-    def __init__(self):
-        self.c = safe_load(open('config.yml', encoding='utf8'))
+    def __init__(self, data=None):
+        self.c = data or {}
         self.log_level = self.c.get('log_level', 'INFO')
 
         self.miniflux_base_url = self.get_config_value('miniflux', 'base_url', None)
@@ -24,6 +25,16 @@ class Config:
         self.ai_news_prompts = self.get_config_value('ai_news', 'prompts', None)
 
         self.agents = self.c.get('agents', {})
+
+    @classmethod
+    def from_file(cls, path='config.yml'):
+        with open(path, encoding='utf8') as f:
+            data = safe_load(f) or {}
+        return cls(data)
+
+    @classmethod
+    def from_dict(cls, data):
+        return cls(data or {})
 
     def get_config_value(self, section, key, default=None):
         return self.c.get(section, {}).get(key, default)

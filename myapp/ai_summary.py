@@ -1,40 +1,28 @@
-from flask import request, abort, jsonify
+from flask import request, abort, jsonify, current_app
 import hmac
 import hashlib
 import concurrent.futures
-from common.logger import logger
 import traceback
 
-import miniflux
-from common.config import Config
-from core import process_entry
-from myapp import app
 
-config = Config()
-miniflux_client = miniflux.Client(config.miniflux_base_url, api_key=config.miniflux_api_key)
+def register_ai_summary_routes(app):
+    @app.route('/api/miniflux-ai', methods=['POST'])
+    def miniflux_ai():
+        services = current_app.config['APP_SERVICES']
+        config = services['config']
+        logger = services['logger']
+        miniflux_client = services['miniflux_client']
+        llm_client = services['llm_client']
+        entry_processor = services['entry_processor']
+        entries_file = services['entries_file']
+        webhook_secret = config.miniflux_webhook_secret
 
-@app.route('/api/miniflux-ai', methods=['POST'])
-def miniflux_ai():
-    """miniflux Webhook API
-    publish new feed entries to this API endpoint
-    ---
-    post:
-      description: Create a random pet
-      parameters:
-        - in: body
-          name: body
-          required: True
-      responses:
-        200:
-          content:
-            application/json:
-              status: string
-    """
-    webhook_secret = config.miniflux_webhook_secret
-
-    if request.method == 'POST':
         payload = request.get_data()
         signature = request.headers.get('X-Miniflux-Signature')
+        if not webhook_secret:
+            abort(403)
+        if not signature:
+            abort(403)
         hmac_signature = hmac.new(webhook_secret.encode(), payload, hashlib.sha256).hexdigest()
         if not hmac.compare_digest(hmac_signature, signature):
             abort(403)  # 返回403 Forbidden
@@ -45,14 +33,14 @@ def miniflux_ai():
             futures = []
             for i in entries['entries']:
                 i['feed'] = entries['feed']
-                futures.append(executor.submit(process_entry, miniflux_client, i))
+                futures.append(executor.submit(entry_processor, miniflux_client, i, llm_client, logger, entries_file, None))
             
             for future in concurrent.futures.as_completed(futures):
                 try:
-                    data = future.result()
+                    future.result()
                 except Exception as e:
                     logger.error(traceback.format_exc())
                     logger.error('generated an exception: %s' % e)
-                    return 500
+                    return jsonify({'status': 'error'}), 500
 
         return jsonify({'status': 'ok'})

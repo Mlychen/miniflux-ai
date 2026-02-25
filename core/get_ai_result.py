@@ -3,25 +3,25 @@ from markdownify import markdownify as md
 from openai import OpenAI
 from google import genai
 from google.genai import types
-from common.config import Config
-from common.logger import logger
-
-config = Config()
-
-if not config.llm_provider or config.llm_provider == "openai":
-    llm_client = OpenAI(base_url=config.llm_base_url, api_key=config.llm_api_key)
-elif config.llm_provider == "gemini":
-    llm_client = genai.Client(
-        http_options=types.HttpOptions(base_url=config.llm_base_url),
-        api_key=config.llm_api_key,
-    )
 
 
-def get_ai_result(prompt: str, request: str):
+def build_llm_client(config):
+    provider = config.llm_provider or 'openai'
+    if provider == 'gemini':
+        return genai.Client(
+            http_options=types.HttpOptions(base_url=config.llm_base_url),
+            api_key=config.llm_api_key,
+        )
+    return OpenAI(base_url=config.llm_base_url, api_key=config.llm_api_key)
+
+
+def get_ai_result(llm_client, config, prompt: str, request: str, logger=None):
     if config.llm_max_length and len(request) > config.llm_max_length:
         request = request[: config.llm_max_length]
 
-    if config.llm_provider == "gemini":
+    provider = config.llm_provider or 'openai'
+
+    if provider == "gemini":
         try:
             if "${content}" in prompt:
                 instruction = ["You are a helpful assistant."]
@@ -39,7 +39,8 @@ def get_ai_result(prompt: str, request: str):
             )
             return response.text
         except Exception as e:
-            logger.error(f"Error in get_ai_result (Gemini): {e}")
+            if logger:
+                logger.error(f"Error in get_ai_result (Gemini): {e}")
             raise
     else:
         if "${content}" in prompt:
@@ -68,5 +69,6 @@ def get_ai_result(prompt: str, request: str):
             response_content = completion.choices[0].message.content
             return response_content
         except Exception as e:
-            logger.error(f"Error in get_ai_result (OpenAI): {e}")
+            if logger:
+                logger.error(f"Error in get_ai_result (OpenAI): {e}")
             raise

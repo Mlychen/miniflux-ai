@@ -1,2 +1,2 @@
 from .config import Config
-from .logger import logger
+from .logger import get_logger

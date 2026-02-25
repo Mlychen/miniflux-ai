@@ -1,17 +1,13 @@
 import json
 import time
 
-from common import logger
-from common.config import Config
 from core.get_ai_result import get_ai_result
 
-config = Config()
-
-def generate_daily_news(miniflux_client):
+def generate_daily_news(miniflux_client, config, llm_client, logger, entries_file='entries.json', ai_news_file='ai_news.json'):
     logger.info('Generating daily news')
     # fetch entries.json
     try:
-        with open('entries.json', 'r') as f:
+        with open(entries_file, 'r', encoding='utf-8') as f:
             entries = json.load(f)
     except (FileNotFoundError, json.JSONDecodeError):
         logger.warning('entries.json not found or corrupted, skipping daily news generation')
@@ -24,17 +20,17 @@ def generate_daily_news(miniflux_client):
     try:
         contents = '\n'.join([i['content'] for i in entries])
         # greeting
-        greeting = get_ai_result(config.ai_news_prompts['greeting'], time.strftime('%B %d, %Y at %I:%M %p'))
+        greeting = get_ai_result(llm_client, config, config.ai_news_prompts['greeting'], time.strftime('%B %d, %Y at %I:%M %p'), logger)
         # summary_block
-        summary_block = get_ai_result(config.ai_news_prompts['summary_block'], contents)
+        summary_block = get_ai_result(llm_client, config, config.ai_news_prompts['summary_block'], contents, logger)
         # summary
-        summary = get_ai_result(config.ai_news_prompts['summary'], summary_block)
+        summary = get_ai_result(llm_client, config, config.ai_news_prompts['summary'], summary_block, logger)
 
         response_content = greeting + '\n\n### 🌐Summary\n' + summary + '\n\n### 📝News\n' + summary_block
 
         logger.info('Generated daily news successfully')
 
-        with open('ai_news.json', 'w') as f:
+        with open(ai_news_file, 'w', encoding='utf-8') as f:
             json.dump(response_content, f, indent=4, ensure_ascii=False)
 
         # trigger miniflux feed refresh
@@ -50,7 +46,7 @@ def generate_daily_news(miniflux_client):
     
     finally:
         try:
-            with open('entries.json', 'w') as f:
+            with open(entries_file, 'w', encoding='utf-8') as f:
                 json.dump([], f, indent=4, ensure_ascii=False)
             logger.info('Cleared entries.json')
         except Exception as e:
