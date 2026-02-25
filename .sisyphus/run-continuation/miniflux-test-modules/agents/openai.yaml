@@ -1,0 +1,4 @@
+version: 1
+display_name: Miniflux Test Modules
+short_description: Run modular tests and live smoke checks for miniflux-ai with uv.
+default_prompt: Run miniflux-ai tests by module and report pass/fail with next actions.
