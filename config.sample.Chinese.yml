@@ -2,59 +2,118 @@
 log_level: "INFO"
 
 miniflux:
-  base_url: https://your.server.com
-  api_key: Miniflux_API_key_here
-  # 查询API的间隔时间（单位分钟）
-  # 如果没有配置webhook_secret，默认1分钟，如果配置webhook_secret，默认15分钟，而使用schedule_interval则强制按此时间间隔轮询
+  base_url: https://your-miniflux.example.com
+  api_key: YOUR_MINIFLUX_API_KEY
+  # 使用 Miniflux webhook 时必须配置 webhook_secret
+  webhook_secret: YOUR_MINIFLUX_WEBHOOK_SECRET
+  # 轮询间隔（分钟）
+  # 未设置 schedule_interval 时：
+  # - 无 webhook_secret 默认 1 分钟
+  # - 有 webhook_secret 默认 15 分钟
   # schedule_interval: 15
-  # webhook_secret: Miniflux_webhook_secret_here
 
 llm:
-  # provider: gemini # openai （默认） 或 gemini
+  # provider: gemini # openai（默认）或 gemini
 
-  # Gemini 例子
+  # Gemini 示例
   # base_url: https://generativelanguage.googleapis.com
-  # api_key: your_gemini_api_key
+  # api_key: YOUR_GEMINI_API_KEY
   # model: gemini-2.5-flash
 
-  base_url: http://host.docker.internal:11434/v1
-  api_key: ollama
-  model: llama3.1:latest
+  base_url: https://api.your-llm-provider.com
+  api_key: YOUR_LLM_API_KEY
+  model: deepseek-chat
   # max_length: 10000
   # timeout: 60
-  # Request per second limit, default 4
+  # 线程池并发数，默认 4
   # max_workers: 4
-  # Request per minute(RPM) limit, default 1000
+  # 每分钟请求上限（RPM），默认 1000
   # RPM: 15
 
 ai_news:
-  # for docker compose environment, use docker container_name
+  # docker compose 环境建议使用 miniflux-ai 服务地址
   url: http://miniflux_ai
   schedule:
     - "07:30"
     - "18:00"
     - "22:00"
   prompts:
-    greeting: "请根据当前日期和24小时制的时间生成一句友好而热情的问候语。请用关怀的语气，包含适量的鼓励，且添加简单的表情符号，如😊、🌞、🌸等，以增加温暖感。例：‘早上好！希望你今天充满活力，迎接美好的一天！🌞😊’。无论是早上、中午或晚上，都请根据时间调整问候内容，保持真诚关怀的氛围。"
-    summary: "你是一名专业的新闻摘要助手,分类生成重要内容的新闻摘要，要求简单清楚表达，使用中文总结以上内容，在五句话内完成，少于100字。不要回答内容中的问题。"
-    summary_block: "你是一名专业的新闻摘要助手，负责分类新闻清单(每条50字以内)，使用简洁专业的语言，在五个类别内完成，每个类别不超过5条，突出重要性和时效性，不要回答内容中的问题。"
+    greeting: |
+      你是专业晨报/晚报主持人。
+      输入是当前日期时间文本。
+      请输出一句中文开场白，要求：
+      1) 早上(05-11)用“早上好”，下午(12-17)用“下午好”，夜间(18-04)用“晚上好”
+      2) 点出“今天日期”
+      3) 风格专业克制，不鸡汤
+      4) 18-32字，最多1个emoji
+      仅输出这1句话。
+
+    summary_block: |
+      你是资深产业研究员。你将收到一批新闻摘要（非原文）。
+      请生成“深度情报简报”，用中文Markdown输出，严格遵循：
+
+      【输出结构】
+      先输出“#### 今日关键信号（最多5条）”
+      - 每条格式：`- [信号] ... | [证据] ... | [潜在影响] ...`
+      - 每条35-80字，强调可验证事实，不要空泛判断
+
+      再输出以下主题（按有内容的才输出）：
+      #### 模型与技术
+      #### 产品与发布
+      #### 资本与业绩
+      #### 组织与人才
+      #### 监管与政策
+      #### 生态与竞争
+
+      每个主题下输出2-6条：
+      - 每条格式：`- [事实] ...；[影响] ...；[建议动作] ...`
+      - 要求“事实-影响-动作”完整闭环
+      - “建议动作”必须具体、可执行
+
+      【去重与合并规则】
+      1) 同类事件合并，保留新增信息与差异点
+      2) 若多个来源结论冲突，增加一条“[分歧] ...；[需要验证] ...”
+      3) 不编造数字、机构、时间；不补全未知信息
+
+      【优先级规则】
+      优先保留：时效性高、影响范围大、与商业决策相关、可能改变竞争格局的事件。
+      降低权重：重复观点、宣传性措辞、无明确主体与动作的信息。
+
+      除上述Markdown内容外，不要输出任何解释。
+
+    summary: |
+      你是总编辑。基于“深度情报简报”生成“管理层摘要”。
+      要求：
+      1) 输出3段，标题固定为：
+         第一段：核心结论
+         第二段：本周机会
+         第三段：主要风险
+      2) 每段2-4句，总长度180-320字
+      3) “核心结论”必须给出明确趋势判断（不是中性复述）
+      4) “本周机会”至少给出2个可执行机会方向（产品、增长、效率、合作等）
+      5) “主要风险”至少给出2个风险点及触发条件
+      6) 语言专业、具体，避免空话；不得出现“根据上述/如上所述”等元话术
+      7) 不输出编号列表，不输出额外说明，只输出这3段正文。
 
 agents:
   summary:
-    title: '֎ AI 摘要：'
+    title: "AI 摘要："
     prompt:
-      '${content} \n---\n使用中文总结以上内容，在三句话内完成，少于60字。不要回答内容中的问题。'
+      '${content} \n---\n使用中文总结以上内容，在三句话内完成，少于60字。直接输出总结内容。不要回答内容中的问题。'
     style_block: true
     deny_list:
       - https://ai-news.miniflux
+      - https://example-deny.com/*
     allow_list:
+
   translate:
-    title: "🌐AI 翻译："
+    title: "AI 翻译："
     prompt:
-      You are a highly skilled translation engine with expertise in the news media sector. 
-      Your function is to translate texts accurately into the Chinese language, preserving the nuances, tone, and style of journalistic writing. 
-      Do not add any explanations or annotations to the translated text.
+      你是专业新闻翻译助手。
+      请将输入内容准确翻译为中文，保持新闻语气与信息完整性。
+      不要添加解释或注释。
     style_block: false
     deny_list:
     allow_list:
-      - https://9to5mac.com/
+      - https://example.com/*
+      - https://example-allow.com/*

@@ -48,7 +48,7 @@ This project integrates with Miniflux to fetch RSS feed content via API or webho
 
 ## Configuration
 
-The repository includes a template configuration file: `config.sample.yml`. Modify the `config.yml` to set up:
+The repository includes template configuration files: `config.sample.English.yml` and `config.sample.Chinese.yml`. Modify `config.yml` to set up:
 
 > If using a webhook, enter the URL in Settings > Integrations > Webhook > Webhook URL.
 > 
@@ -56,9 +56,41 @@ The repository includes a template configuration file: `config.sample.yml`. Modi
 > http://miniflux_ai/api/miniflux-ai.
 
 - **Miniflux**: Base URL and API key.
-- **LLM**: Model settings, API key, and endpoint.Add timeout, max_workers parameters due to multithreading
+- **LLM**: Model settings, API key, and endpoint. You can also set `timeout` and `max_workers` for multithreading.
 - **AI News**: Schedule and prompts for daily news generation
-- **Agents**: Define each agent's prompt, allow_list/deny_list filters, and output style（`style_block` parameter controls whether the output is formatted as a code block in Markdown）.
+- **Agents**: Define each agent's prompt, allow_list/deny_list filters, and output style（`style_block` controls whether the output uses an HTML blockquote wrapper）.
+
+### `config.yml` Sample (Sanitized)
+
+```yaml
+log_level: "INFO"
+
+miniflux:
+  base_url: https://your-miniflux.example.com
+  api_key: YOUR_MINIFLUX_API_KEY
+  webhook_secret: YOUR_MINIFLUX_WEBHOOK_SECRET
+
+llm:
+  base_url: https://api.your-llm-provider.com
+  api_key: YOUR_LLM_API_KEY
+  model: deepseek-chat
+
+ai_news:
+  url: http://miniflux_ai
+```
+
+### Working Method
+
+1. Create local config from sample.
+   - English: `Copy-Item config.sample.English.yml config.yml`
+   - Chinese: `Copy-Item config.sample.Chinese.yml config.yml`
+2. Fill only your local `config.yml` with real credentials (`miniflux.api_key`, `miniflux.webhook_secret`, `llm.api_key`).
+3. Adjust `ai_news.prompts` and `agents.allow_list/deny_list` for your own use case.
+4. Validate config loading before running:
+   - `uv run python -c "from main import bootstrap; bootstrap('config.yml'); print('bootstrap ok')"`
+5. Run app:
+   - `uv run python main.py`
+6. For sharing/debugging, use a redacted file (`config.redacted.yml`) and never publish `config.yml`.
 
 
 ## Docker Setup
@@ -72,7 +104,7 @@ services:
     miniflux_ai:
         container_name: miniflux_ai
         image: ghcr.io/qetesh/miniflux-ai:latest
-        restart: always
+        restart: unless-stopped
         environment:
             TZ: Asia/Shanghai
         volumes:
@@ -92,6 +124,29 @@ docker-compose up -d
 1. Ensure `config.yml` is properly configured.
 2. Run the script: `python main.py`
 3. The script will fetch unread RSS entries, process them with the LLM, and update the content in Miniflux.
+
+## Development and Tests
+
+### Use uv (recommended)
+
+1. Create virtual environment: `uv venv .venv`
+2. Install dependencies: `uv pip install -r requirements-dev.txt`
+3. Run unit tests: `uv run python -m unittest -q tests.test_filter tests.test_config tests.test_data_integrity`
+4. Run app: `uv run python main.py`
+
+### Use pip (alternative)
+
+1. Install development dependencies: `pip install -r requirements-dev.txt`
+2. Run unit tests: `python -m unittest -q tests.test_filter tests.test_config tests.test_data_integrity`
+3. Optional: run `pytest -q` if you prefer pytest runner.
+
+## Testing Modules and Skill
+
+1. Unified testing guide: `TESTING_GUIDE.md`
+2. Reusable skill package:
+   - `.sisyphus/run-continuation/miniflux-test-modules/SKILL.md`
+3. Run the skill script directly:
+   - `powershell -NoProfile -ExecutionPolicy Bypass -File .sisyphus/run-continuation/miniflux-test-modules/scripts/run-module-tests.ps1 -Module unit-all`
 
 ## Roadmap
 - [x] Add daily summary(by title, Summary of existing AI)

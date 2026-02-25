@@ -1,61 +1,119 @@
-# INFO、DEBUG、WARN、ERROR
+# INFO, DEBUG, WARN, ERROR
 log_level: "INFO"
 
 miniflux:
-  base_url: https://your.server.com
-  api_key: Miniflux_API_key_here
-  # The interval time for querying the API (in minutes)
-  # If the webhook_secret is not configured, it defaults to 1 minute. If the webhook_secret is configured, it defaults to 15 minutes. And when using schedule_interval, the polling will be carried out at this specified time interval.
+  base_url: https://your-miniflux.example.com
+  api_key: YOUR_MINIFLUX_API_KEY
+  # webhook_secret is required when using Miniflux webhook integration.
+  webhook_secret: YOUR_MINIFLUX_WEBHOOK_SECRET
+  # Polling interval in minutes.
+  # If schedule_interval is not set:
+  # - defaults to 1 minute without webhook_secret
+  # - defaults to 15 minutes with webhook_secret
   # schedule_interval: 15
-  # webhook_secret: Miniflux_webhook_secret_here
 
 llm:
   # provider: gemini # openai (default) or gemini
 
-  # Gemini Example
+  # Gemini example
   # base_url: https://generativelanguage.googleapis.com
-  # api_key: your_gemini_api_key
+  # api_key: YOUR_GEMINI_API_KEY
   # model: gemini-2.5-flash
 
-  base_url: http://host.docker.internal:11434/v1
-  api_key: ollama
-  model: llama3.1:latest
+  base_url: https://api.your-llm-provider.com
+  api_key: YOUR_LLM_API_KEY
+  model: deepseek-chat
   # max_length: 10000
   # timeout: 60
-  # Request per second limit, default 4
+  # Thread pool worker count (concurrency), default 4
   # max_workers: 4
-  # Request per minute(RPM) limit, default 1000
+  # Request per minute (RPM) rate limit, default 1000
   # RPM: 15
 
 ai_news:
-  # for docker compose environment, use docker container_name
+  # In Docker Compose, use the miniflux-ai service URL
   url: http://miniflux_ai
   schedule:
     - "07:30"
     - "18:00"
     - "22:00"
   prompts:
-    greeting: "According to the current date and 24-hour time, generate a friendly and warm greeting. Use a caring tone, include moderate encouragement, and add simple emojis like 😊, 🌞, 🌸, etc., to enhance the sense of warmth. Example: 'Good morning! May you be full of energy today and welcome a wonderful day! 🌞😊'. Whether it's morning, noon, or evening, please adjust the greeting content according to the time to maintain an atmosphere of sincere care."
-    summary: "You are a professional news summary assistant, categorically generating concise and clear news summaries of important content, summarizing the above in five sentences or less, under 100 characters. Do not answer questions within the content."
-    summary_block: "You are a professional news summary assistant, responsible for categorizing news lists (each within 50 characters), using concise and professional language, completing within five categories, with no more than five items per category, highlighting importance and timeliness. Do not answer questions within the content."
+    greeting: |
+      You are a professional Chinese morning/evening news host.
+      Input is current date-time text.
+      Return exactly one Chinese opening sentence:
+      1) 05-11 use "早上好", 12-17 use "下午好", 18-04 use "晚上好"
+      2) Mention today's date
+      3) Professional and restrained tone, no motivational fluff
+      4) 18-32 Chinese characters, at most 1 emoji
+      Return only that one sentence.
+
+    summary_block: |
+      You are a senior industry analyst. You will receive multiple news summaries (not raw articles).
+      Generate a Chinese Markdown "deep intelligence brief" with these rules:
+
+      [Output structure]
+      Start with "#### 今日关键信号（最多5条）"
+      - Each item format: `- [信号] ... | [证据] ... | [潜在影响] ...`
+      - Each item should be 35-80 Chinese characters and fact-driven
+
+      Then output these sections only when they have content:
+      #### 模型与技术
+      #### 产品与发布
+      #### 资本与业绩
+      #### 组织与人才
+      #### 监管与政策
+      #### 生态与竞争
+
+      Each section must have 2-6 items:
+      - Format: `- [事实] ...；[影响] ...；[建议动作] ...`
+      - Keep a closed loop: fact -> impact -> action
+      - Action must be concrete and executable
+
+      [Dedup and merge]
+      1) Merge similar events and keep only deltas
+      2) If sources conflict, add one line: `[分歧] ...；[需要验证] ...`
+      3) Do not invent numbers, organizations, or timestamps
+
+      [Priority]
+      Keep events that are timely, broad-impact, and decision-relevant.
+      Down-rank repetitive opinions or marketing language.
+
+      Output only Markdown content, no extra explanation.
+
+    summary: |
+      You are the chief editor. Based on the "deep intelligence brief", produce a "management summary".
+      Requirements:
+      1) Output 3 paragraphs with fixed titles:
+         第一段：核心结论
+         第二段：本周机会
+         第三段：主要风险
+      2) 2-4 sentences per paragraph, total 180-320 Chinese characters
+      3) "核心结论" must include a clear trend judgment
+      4) "本周机会" must include at least 2 executable opportunity directions
+      5) "主要风险" must include at least 2 risk points and triggers
+      6) Professional and specific language, no meta wording
+      7) No numbered list, no extra notes; output only the 3 paragraphs
 
 agents:
   summary:
-    title: '֎ AI summary:'
+    title: "AI Summary: "
     prompt:
-      '${content} \n---\nSummarize the above content in three sentences, less than 60 characters. Do not answer the questions within the content.'
+      '${content} \n---\nSummarize in Chinese within three sentences and under 60 Chinese characters. Output summary only. Do not answer questions in the content.'
     style_block: true
     deny_list:
       - https://ai-news.miniflux
+      - https://example-deny.com/*
     allow_list:
 
   translate:
-    title: "🌐AI translate: "
+    title: "AI Translate: "
     prompt:
       You are a highly skilled translation engine with expertise in the news media sector.
-      Your function is to translate texts accurately into the English language, preserving the nuances, tone, and style of journalistic writing.
-      Do not add any explanations or annotations to the translated text.
+      Your function is to translate texts accurately into Chinese, preserving nuance, tone, and journalistic style.
+      Do not add explanations or annotations.
     style_block: false
     deny_list:
     allow_list:
-      - https://www.xxx.com/
+      - https://example.com/*
+      - https://example-allow.com/*
