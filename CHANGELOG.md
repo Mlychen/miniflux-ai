@@ -21,6 +21,38 @@ All notable changes to this project will be documented in this file.
   - Content marker detection
   - Processed entries tracking
 - `build_rate_limited_processor()` now accepts `processed_entries_repository` parameter
+- **Queue integration complete**: Webhook requests now return 202 Accepted and are processed asynchronously via background workers
+- `myapp/__init__.py`: Flask app now accepts optional `webhook_queue` parameter
+- `myapp/ai_summary.py`: Webhook handler now uses queue when available, returns 202 for async processing
+- `main.py`: `my_flask()` now creates and starts webhook queue consumer threads
+
+### Migration Notes
+
+- If using webhook mode, configure `miniflux.entry_mode` and `miniflux.webhook_secret`
+- Default `entry_mode=auto` maintains backward compatibility
+- Webhook mode now returns 202 (Accepted) instead of blocking until processing completes
+
+All notable changes to this project will be documented in this file.
+
+## 2026-02-26
+
+### Added
+
+- New config options for single-entry mode:
+  - `miniflux.entry_mode`: `auto | webhook | polling`, default `auto`
+  - `miniflux.webhook_queue_max_size`: queue max size, default 1000
+  - `miniflux.webhook_queue_workers`: background workers, default 2
+  - `miniflux.dedup_marker`: dedup marker, default `<!-- miniflux-ai:processed -->`
+- New repository: `ProcessedEntriesRepository` for tracking processed entry IDs
+- New module: `core/queue.py` with `QueueBackend` protocol and `InMemoryQueueBackend` implementation
+
+### Changed
+
+- Simplified entry mode: now only one entry (webhook OR polling) is active based on config
+- `process_entry()` now supports deduplication via:
+  - Content marker detection
+  - Processed entries tracking
+- `build_rate_limited_processor()` now accepts `processed_entries_repository` parameter
 
 ### Migration Notes
 

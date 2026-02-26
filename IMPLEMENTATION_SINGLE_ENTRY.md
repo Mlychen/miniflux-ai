@@ -13,7 +13,17 @@
 #QM|
 #RH|## 实施状态
 #ZR|
-#JB|### 已完成
+- ✅ 1) 配置新增：entry_mode, webhook_queue_max_size, webhook_queue_workers, dedup_marker
+- ✅ 2) 单入口切换：resolve_entry_mode, should_start_flask, should_start_polling
+- ✅ 3) 队列模块：core/queue.py (QueueBackend, InMemoryQueueBackend, WebhookQueue)
+- ✅ 4) 去重逻辑：ProcessedEntriesRepository + process_entries.py 去重检查
+- ✅ 5) 队列集成：myapp/__init__.py, myapp/ai_summary.py, main.py
+
+### 待完成（方案A）
+
+- ✅ 3.1) myapp/__init__.py：集成队列初始化（Flask app.config 方式）
+- ✅ 3.2) myapp/ai_summary.py：使用队列异步处理
+- ✅ 3.3) main.py：启动后台消费者线程
 #MW|
 #YQ|- ✅ 1) 配置新增：entry_mode, webhook_queue_max_size, webhook_queue_workers, dedup_marker
 #YJ|- ✅ 2) 单入口切换：resolve_entry_mode, should_start_flask, should_start_polling
@@ -63,6 +73,8 @@
 #QM|    
 #QM|    # ... 现有代码 ...
 #QM|```
+
+> ⚠️ **注意事项**：`entry_mode` 判断应使用 `resolve_entry_mode()` 函数而非直接读取配置值。如果用户配置为 `auto`，直接对比字符串会导致队列无法创建。
 #QM|
 #QT|#### 3.2 myapp/ai_summary.py 异步处理
 #QM|
@@ -104,6 +116,8 @@
 #QM|                return jsonify({'status': 'error'}), 500
 #QM|            return jsonify({'status': 'ok'})
 #QM|```
+
+> ⚠️ **注意事项**：`task` 字典传递的对象引用在多线程环境下可能存在生命周期问题。需确认 `config`、`miniflux_client` 等对象是否线程安全，或考虑传递标识符而非对象引用。
 #QM|
 #QT|#### 3.3 main.py 启动消费者线程
 #QM|
@@ -143,6 +157,8 @@
 #QM|    logger.info('Starting API')
 #QM|    app.run(host='0.0.0.0', port=80)
 #QM|```
+
+> ⚠️ **注意事项**：Flask 开发环境 `app.run(debug=True)` 会触发进程 fork 导致消费者线程重复启动。生产环境无此问题，开发环境建议添加 `use_reloader=False` 或线程启动保护。
 #QM|
 #QT|### 测试方法
 #MV|

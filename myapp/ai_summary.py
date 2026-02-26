@@ -7,7 +7,7 @@ from myapp.services import get_app_services
 
 
 def register_ai_summary_routes(app):
-    @app.route('/api/miniflux-ai', methods=['POST'])
+    @app.route("/api/miniflux-ai", methods=["POST"])
     def miniflux_ai():
         services = get_app_services(current_app)
         config = services.config
@@ -18,22 +18,42 @@ def register_ai_summary_routes(app):
         webhook_secret = config.miniflux_webhook_secret
 
         payload = request.get_data()
-        signature = request.headers.get('X-Miniflux-Signature')
+        signature = request.headers.get("X-Miniflux-Signature")
         if not webhook_secret:
             abort(403)
         if not signature:
             abort(403)
-        hmac_signature = hmac.new(webhook_secret.encode(), payload, hashlib.sha256).hexdigest()
+        hmac_signature = hmac.new(
+            webhook_secret.encode(), payload, hashlib.sha256
+        ).hexdigest()
         if not hmac.compare_digest(hmac_signature, signature):
             abort(403)  # 返回403 Forbidden
         entries = request.json
-        logger.info('Get unread entries via webhook: ' + str(len(entries['entries'])))
+        logger.info("Get unread entries via webhook: " + str(len(entries["entries"])))
 
         batch_entries = []
-        for i in entries['entries']:
-            i['feed'] = entries['feed']
+        for i in entries["entries"]:
+            i["feed"] = entries["feed"]
             batch_entries.append(i)
 
+        # Check if webhook queue is configured
+        webhook_queue = current_app.config.get("WEBHOOK_QUEUE")
+        if webhook_queue:
+            # Enqueue task for async processing
+            task = {
+                "entries": batch_entries,
+                "feed": entries["feed"],
+            }
+            success = webhook_queue.enqueue(task)
+            if not success:
+                logger.warning("Webhook queue is full, rejecting request")
+                return jsonify({"status": "error", "message": "queue full"}), 503
+            logger.info(
+                f"Enqueued {len(batch_entries)} entries to webhook queue (size: {webhook_queue.size()})"
+            )
+            return jsonify({"status": "accepted"}), 202
+
+        # No queue - process synchronously (legacy behavior)
         result = process_entries_batch(
             config,
             batch_entries,
@@ -42,7 +62,7 @@ def register_ai_summary_routes(app):
             llm_client,
             logger,
         )
-        if result['failures'] > 0:
-            return jsonify({'status': 'error'}), 500
+        if result["failures"] > 0:
+            return jsonify({"status": "error"}), 500
 
-        return jsonify({'status': 'ok'})
+        return jsonify({"status": "ok"})
