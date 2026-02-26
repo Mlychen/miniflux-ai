@@ -12,11 +12,10 @@ from common.ai_news_repository import AiNewsRepository
 from common.config import Config
 from common.entries_repository import EntriesRepository
 from common.logger import get_logger
-from common.processed_entries_repository import ProcessedEntriesRepository
 from core.ai_news_helpers import has_ai_news_feed
 from core.fetch_unread_entries import fetch_unread_entries
 from core.generate_daily_news import generate_daily_news
-from core.process_entries import build_rate_limited_processor
+from core.process_entries import InMemoryProcessedNewsIds, build_rate_limited_processor
 from core.process_entries_batch import process_entries_batch
 from core.queue import InMemoryQueueBackend, WebhookQueue
 from myapp import create_app
@@ -117,7 +116,7 @@ def my_schedule(services):
         if not has_ai_news_feed(feeds):
             try:
                 miniflux_client.create_feed(
-                    category_id=1, feed_url=config.ai_news_url + "/rss/ai-news"
+                    category_id=1, feed_url=config.ai_news_url + "/miniflux-ai/rss/ai-news"
                 )
                 logger.info("Successfully created the ai_news feed in Miniflux!")
             except Exception as e:
@@ -224,8 +223,11 @@ def bootstrap(config_path="config.yml"):
     llm_client = LLMGateway(config)
     entries_file = "entries.json"
     entries_repository = EntriesRepository(path=entries_file, lock=file_lock)
+    processed_news_ids = InMemoryProcessedNewsIds()
     entry_processor = build_rate_limited_processor(
-        config, entries_repository=entries_repository
+        config,
+        entries_repository=entries_repository,
+        processed_news_ids=processed_news_ids,
     )
     ai_news_file = "ai_news.json"
     ai_news_repository = AiNewsRepository(path=ai_news_file, lock=file_lock)

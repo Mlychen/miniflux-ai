@@ -35,6 +35,30 @@ class TestEntriesRepository(unittest.TestCase):
         repo = EntriesRepository(path=str(path), lock=threading.Lock())
         self.assertEqual(repo.read_all(), [])
 
+    def test_append_read_with_extended_fields(self):
+        path = TMP_DIR / "extended_entries.json"
+        repo = EntriesRepository(path=str(path), lock=threading.Lock())
+        item = {
+            "id": "abc",
+            "datetime": "2026-02-25T00:00:00Z",
+            "category": "News",
+            "title": "title",
+            "content": "summary",
+            "url": "https://example.com/x",
+            "ai_category": "科技",
+            "ai_subject": "OpenAI",
+            "ai_subject_type": "公司",
+            "ai_region": "美国",
+            "ai_event_type": "产品与发布",
+            "ai_group_hint": "科技 / OpenAI / 美国",
+            "ai_confidence": 0.9,
+        }
+        repo.append_summary_item(item)
+        self.assertEqual(repo.read_all(), [item])
+
+        repo.clear_all()
+        self.assertEqual(json.loads(path.read_text(encoding="utf-8")), [])
+
 
 if __name__ == "__main__":
     unittest.main()

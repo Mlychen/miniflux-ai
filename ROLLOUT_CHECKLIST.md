@@ -31,7 +31,7 @@
    - Send signed webhook payload and verify 200.
    - Missing/invalid signature should return 403.
 3. AI news path:
-   - Wait for scheduled run and verify `/rss/ai-news` returns new entry.
+   - Wait for scheduled run and verify `/miniflux-ai/rss/ai-news` returns new entry.
 
 ## 4) 24h Gray Observation
 

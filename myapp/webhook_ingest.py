@@ -31,27 +31,42 @@ def register_webhook_routes(app):
             webhook_secret.encode(), payload, hashlib.sha256
         ).hexdigest()
         if not hmac.compare_digest(hmac_signature, signature):
-            abort(403)  # 返回403 Forbidden
-        entries = request.json
-        logger.info("Get unread entries via webhook: " + str(len(entries["entries"])))
+            abort(403)
+
+        data = request.json or {}
+        event_type = data.get("event_type")
+
+        if event_type == "save_entry":
+            if logger:
+                logger.info("Received save_entry webhook event, ignoring for now")
+            return jsonify({"status": "ignored", "reason": "save_entry not processed"}), 200
+
+        entries = data.get("entries")
+        feed = data.get("feed")
+
+        if not isinstance(entries, list) or not feed:
+            if logger:
+                logger.error("Invalid webhook payload: missing entries or feed")
+            return jsonify({"status": "error", "message": "invalid payload"}), 400
+
+        logger.info("Get unread entries via webhook: " + str(len(entries)))
 
         batch_entries = []
-        for i in entries["entries"]:
-            i["feed"] = entries["feed"]
+        for i in entries:
+            i["feed"] = feed
             batch_entries.append(i)
 
         if logger and hasattr(logger, "debug"):
             logger.debug(
-                f"webhook: batch_entries_count={len(batch_entries)} feed_site={entries['feed'].get('site_url')}"
+                f"webhook: batch_entries_count={len(batch_entries)} feed_site={feed.get('site_url')}"
             )
 
         # Check if webhook queue is configured
         webhook_queue = current_app.config.get("WEBHOOK_QUEUE")
         if webhook_queue:
-            # Enqueue task for async processing
             task = {
                 "entries": batch_entries,
-                "feed": entries["feed"],
+                "feed": feed,
             }
             success = webhook_queue.enqueue(task)
             if not success:

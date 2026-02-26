@@ -48,7 +48,7 @@ class TestAiNewsAPI(unittest.TestCase):
         app = make_app(ai_news_file)
 
         with app.test_client() as client:
-            response = client.get("/rss/ai-news")
+            response = client.get("/miniflux-ai/rss/ai-news")
 
         self.assertEqual(response.status_code, 200)
         xml = response.data.decode("utf-8")
@@ -67,7 +67,7 @@ class TestAiNewsAPI(unittest.TestCase):
         app = make_app(ai_news_file)
 
         with app.test_client() as client:
-            response = client.get("/rss/ai-news")
+            response = client.get("/miniflux-ai/rss/ai-news")
 
         self.assertEqual(response.status_code, 200)
         xml = response.data.decode("utf-8")

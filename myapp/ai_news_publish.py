@@ -8,8 +8,8 @@ from feedgen.feed import FeedGenerator
 from myapp.services import get_app_services
 
 
-def register_ai_news_routes(app):
-    @app.route('/rss/ai-news', methods=['GET'])
+def register_ai_news_publish_routes(app):
+    @app.route('/miniflux-ai/rss/ai-news', methods=['GET'])
     def miniflux_ai_news():
         # TODO: support selecting articles in a configurable recent time window.
         services = get_app_services(current_app)

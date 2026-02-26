@@ -99,6 +99,18 @@ This is the single entry point for test execution, live verification, and LLM te
 - Command:
   - `uv run python -m unittest -q tests.test_filter tests.test_config tests.test_data_integrity tests.test_webhook_api tests.test_concurrency_integrity tests.test_ai_news_api tests.test_batch_usecase tests.test_service_containers tests.test_adapters tests.test_core_helpers tests.test_ai_news_repository tests.test_entries_repository`
 
+### lint
+
+- Scope: code style and static issues.
+- Command:
+  - `uv run ruff check .`
+
+### typecheck
+
+- Scope: static type consistency.
+- Command:
+  - `uv run mypy --ignore-missing-imports .`
+
 ## 2) Live Integration Flow
 
 1. Bootstrap:
@@ -132,7 +144,7 @@ For release gating and 24h observation criteria, use:
      - `webhook` 或 `auto`+有 `webhook_secret`：仅启动 webhook（Flask + 队列）
      - `polling`：仅启动轮询
    - 本地/服务器启动命令示例：
-     - `uv run python main.py`
+     - `uv run python main.py *>> .\miniflux-ai.log`
 
 2. Miniflux 连接与入口校验
    - 运行 Live Integration Flow 中的：

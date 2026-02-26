@@ -89,7 +89,7 @@ The repository includes template configuration files: `config.sample.English.yml
 > If using a webhook, enter the URL in Settings > Integrations > Webhook > Webhook URL.
 > 
 > If deploying in a container alongside Miniflux, use the following URL:
-> http://miniflux_ai/api/miniflux-ai.
+> http://miniflux_ai/miniflux-ai/webhook/entries.
 
 - **Miniflux**: Base URL and API key.
 - **LLM**: Model settings, API key, and endpoint. You can also set `timeout` and `max_workers` for multithreading.

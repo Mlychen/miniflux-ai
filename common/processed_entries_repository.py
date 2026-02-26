@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Any, List, Optional
+from typing import Any, List
 
 from common.json_storage import append_json_list_item, read_json_file, write_json_file
 

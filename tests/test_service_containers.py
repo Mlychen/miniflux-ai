@@ -35,7 +35,10 @@ class TestServiceContainers(unittest.TestCase):
         self.assertEqual(services.entries_repository.path, 'entries.json')
         self.assertEqual(services.ai_news_repository.path, 'ai_news.json')
         self.assertIsNotNone(services.entries_repository.lock)
-        self.assertIs(services.entries_repository.lock, services.ai_news_repository.lock)
+        self.assertIsNotNone(services.ai_news_repository.lock)
+        self.assertIsNot(
+            services.entries_repository.lock, services.ai_news_repository.lock
+        )
 
     def test_create_app_stores_typed_app_services(self):
         app_lock = object()

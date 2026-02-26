@@ -169,7 +169,6 @@ class TestWebhookQueue(unittest.TestCase):
             time.sleep(0.1)
 
         queue.start(processor)
-        initial_threads = len(queue._threads)
 
         queue.stop()
 

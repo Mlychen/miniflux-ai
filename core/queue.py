@@ -18,10 +18,14 @@ class QueueBackend(Protocol):
         """Return current queue size."""
         ...
 
+    def max_size(self) -> int:
+        """Return max queue size."""
+        ...
+
 
 class InMemoryQueueBackend:
     def __init__(self, max_size: int = 1000):
-        self._queue = queue.Queue(maxsize=max_size)
+        self._queue: queue.Queue[Any] = queue.Queue(maxsize=max_size)
         self._max_size = max_size
 
     def enqueue(self, item: Any) -> bool:
@@ -43,6 +47,9 @@ class InMemoryQueueBackend:
 
     def size(self) -> int:
         return self._queue.qsize()
+
+    def max_size(self) -> int:
+        return self._max_size
 
 
 class WebhookQueue:
@@ -66,7 +73,7 @@ class WebhookQueue:
             self._threads.append(t)
         if self._logger and hasattr(self._logger, "debug"):
             self._logger.debug(
-                f"WebhookQueue.start: workers={self._workers} max_size={self._backend._max_size}"
+                f"WebhookQueue.start: workers={self._workers} max_size={self._backend.max_size()}"
             )
 
     def stop(self):
@@ -105,4 +112,4 @@ class WebhookQueue:
 
     @property
     def is_full(self) -> bool:
-        return self.size() >= self._backend._max_size
+        return self.size() >= self._backend.max_size()

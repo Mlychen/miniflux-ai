@@ -20,11 +20,6 @@ class DummyLogger:
 
     def warning(self, *args, **kwargs):
         return None
-    def info(self, *args, **kwargs):
-        return None
-
-    def error(self, *args, **kwargs):
-        return None
 
 
 def make_config(webhook_secret):
@@ -78,7 +73,7 @@ class TestWebhookAPI(unittest.TestCase):
 
         with app.test_client() as client:
             response = client.post(
-                "/api/miniflux-ai",
+                "/miniflux-ai/webhook/entries",
                 data=body,
                 content_type="application/json",
                 headers={"X-Miniflux-Signature": "any-signature"},
@@ -101,7 +96,7 @@ class TestWebhookAPI(unittest.TestCase):
 
         with app.test_client() as client:
             response = client.post(
-                "/api/miniflux-ai",
+                "/miniflux-ai/webhook/entries",
                 data=body,
                 content_type="application/json",
             )
@@ -123,7 +118,7 @@ class TestWebhookAPI(unittest.TestCase):
 
         with app.test_client() as client:
             response = client.post(
-                "/api/miniflux-ai",
+                "/miniflux-ai/webhook/entries",
                 data=body,
                 content_type="application/json",
                 headers={"X-Miniflux-Signature": "invalid"},
@@ -159,7 +154,7 @@ class TestWebhookAPI(unittest.TestCase):
 
         with app.test_client() as client:
             response = client.post(
-                "/api/miniflux-ai",
+                "/miniflux-ai/webhook/entries",
                 data=body,
                 content_type="application/json",
                 headers={"X-Miniflux-Signature": signature},
@@ -191,7 +186,7 @@ class TestWebhookAPI(unittest.TestCase):
 
         with app.test_client() as client:
             response = client.post(
-                "/api/miniflux-ai",
+                "/miniflux-ai/webhook/entries",
                 data=body,
                 content_type="application/json",
                 headers={"X-Miniflux-Signature": signature},
@@ -259,7 +254,7 @@ class TestWebhookQueueIntegration(unittest.TestCase):
 
         with app.test_client() as client:
             response = client.post(
-                "/api/miniflux-ai",
+                "/miniflux-ai/webhook/entries",
                 data=body,
                 content_type="application/json",
                 headers={"X-Miniflux-Signature": signature},
@@ -295,7 +290,7 @@ class TestWebhookQueueIntegration(unittest.TestCase):
 
         with app.test_client() as client:
             response = client.post(
-                "/api/miniflux-ai",
+                "/miniflux-ai/webhook/entries",
                 data=body,
                 content_type="application/json",
                 headers={"X-Miniflux-Signature": signature},
@@ -336,7 +331,7 @@ class TestWebhookQueueIntegration(unittest.TestCase):
         # Send webhook request - returns immediately with 202
         with app.test_client() as client:
             response = client.post(
-                "/api/miniflux-ai",
+                "/miniflux-ai/webhook/entries",
                 data=body,
                 content_type="application/json",
                 headers={"X-Miniflux-Signature": signature},

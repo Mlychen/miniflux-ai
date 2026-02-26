@@ -23,7 +23,7 @@ All notable changes to this project will be documented in this file.
 - `build_rate_limited_processor()` now accepts `processed_entries_repository` parameter
 - **Queue integration complete**: Webhook requests now return 202 Accepted and are processed asynchronously via background workers
 - `myapp/__init__.py`: Flask app now accepts optional `webhook_queue` parameter
-- `myapp/ai_summary.py`: Webhook handler now uses queue when available, returns 202 for async processing
+- `myapp/webhook_ingest.py`: Webhook handler now uses queue when available, returns 202 for async processing
 - `main.py`: `my_flask()` now creates and starts webhook queue consumer threads
 
 ### Migration Notes
