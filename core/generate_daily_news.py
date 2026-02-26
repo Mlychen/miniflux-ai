@@ -23,26 +23,42 @@ def generate_daily_news(
         return []
 
     try:
+        if logger and hasattr(logger, 'debug'):
+            logger.debug(f'generate_daily_news: entries_count={len(entries)}')
         contents = '\n'.join([i['content'] for i in entries])
+        if logger and hasattr(logger, 'debug'):
+            logger.debug(f'generate_daily_news: concatenated_content_length={len(contents)}')
         greeting = llm_client.get_result(
             config.ai_news_prompts['greeting'],
             time.strftime('%B %d, %Y at %I:%M %p'),
             logger,
         )
+        if logger and hasattr(logger, 'debug'):
+            logger.debug(f'generate_daily_news: greeting_length={len(greeting or "")}')
         summary_block = llm_client.get_result(
             config.ai_news_prompts['summary_block'],
             contents,
             logger,
         )
+        if logger and hasattr(logger, 'debug'):
+            logger.debug(
+                f'generate_daily_news: summary_block_length={len(summary_block or "")}'
+            )
         summary = llm_client.get_result(
             config.ai_news_prompts['summary'],
             summary_block,
             logger,
         )
+        if logger and hasattr(logger, 'debug'):
+            logger.debug(f'generate_daily_news: summary_length={len(summary or "")}')
 
         response_content = compose_daily_news_content(greeting, summary, summary_block)
         logger.info('Generated daily news successfully')
         active_ai_news_repository.save_latest(response_content)
+        if logger and hasattr(logger, 'debug'):
+            logger.debug(
+                f'generate_daily_news: saved_content_length={len(response_content or "")}'
+            )
 
         feeds = miniflux_client.get_feeds()
         ai_news_feed_id = find_ai_news_feed_id(feeds)

@@ -15,18 +15,18 @@ def process_entry(
     entries_repository=None,
     processed_entries_repository=None,
 ):
-    # Deduplication check - only if processed_entries_repository is provided
     dedup_marker = config.miniflux_dedup_marker
     entry_id = str(entry["id"])
 
-    # Check 1: Content already has dedup marker (only if dedup_marker is configured)
+    if logger and hasattr(logger, "debug"):
+        logger.debug(f"process_entry: start entry_id={entry_id}")
+
     if dedup_marker and dedup_marker in (entry.get("content") or ""):
         logger.info(
             f"Skipping entry {entry_id} - already processed (dedup marker found)"
         )
         return
 
-    # Check 2: Entry ID already in processed records (only if repo is provided)
     if processed_entries_repository is not None:
         if processed_entries_repository.contains(entry_id):
             logger.info(
@@ -34,14 +34,17 @@ def process_entry(
             )
             return
 
-    # Process entry
+    if logger and hasattr(logger, "debug"):
+        logger.debug(
+            f"process_entry: processing entry_id={entry_id} agents={list(config.agents.keys())}"
+        )
+
     llm_result = ""
     active_entries_repository = entries_repository or EntriesRepository(
         path="entries.json"
     )
 
     for agent in config.agents.items():
-        # filter, if AI is not generating, and in allow_list, or not in deny_list
         if filter_entry(config, agent, entry):
             try:
                 response_content = llm_client.get_result(
@@ -61,7 +64,11 @@ def process_entry(
             )
             logger.info(f"agents:{agent[0]} feed_id:{entry['id']} result:{log_content}")
 
-            # save for ai_summary
+            if logger and hasattr(logger, "debug"):
+                logger.debug(
+                    f"process_entry: agent={agent[0]} entry_id={entry_id} response_length={len(response_content or '')}"
+                )
+
             if agent[0] == "summary":
                 entry_list = build_summary_entry(entry, response_content)
                 active_entries_repository.append_summary_item(entry_list)
@@ -69,13 +76,16 @@ def process_entry(
             llm_result = llm_result + render_agent_response(agent[1], response_content)
 
     if len(llm_result) > 0:
-        # Add dedup marker to content
         new_content = llm_result + entry["content"]
         if dedup_marker:
             new_content = new_content + "\n" + dedup_marker
         miniflux_client.update_entry(entry["id"], content=new_content)
 
-        # Record processed entry ID if repo is provided
+        if logger and hasattr(logger, "debug"):
+            logger.debug(
+                f"process_entry: updated entry {entry_id} with dedup_marker={bool(dedup_marker)}"
+            )
+
         if processed_entries_repository is not None:
             processed_entries_repository.add(entry_id)
 

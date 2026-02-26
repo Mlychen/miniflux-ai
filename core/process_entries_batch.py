@@ -13,6 +13,11 @@ def process_entries_batch(
     if not entries:
         return {'total': 0, 'failures': 0}
 
+    if logger and hasattr(logger, 'debug'):
+        logger.debug(
+            f"process_entries_batch: total_entries={len(entries)} max_workers={config.llm_max_workers}"
+        )
+
     failures = 0
     with concurrent.futures.ThreadPoolExecutor(max_workers=config.llm_max_workers) as executor:
         futures = [
