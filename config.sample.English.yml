@@ -4,6 +4,27 @@ log_level: "INFO"
 miniflux:
   base_url: https://your-miniflux.example.com
   api_key: YOUR_MINIFLUX_API_KEY
+  # Entry mode: auto | webhook | polling, default auto
+  # auto: use webhook if webhook_secret exists, otherwise polling
+  # webhook: only start webhook (Flask), no polling
+  # polling: only start polling, no webhook
+  # entry_mode: auto
+  # webhook_secret is required when using Miniflux webhook integration.
+  webhook_secret: YOUR_MINIFLUX_WEBHOOK_SECRET
+  # Webhook queue buffer settings (only effective when entry_mode=webhook)
+  # Maximum queue size, returns 429 when full
+  # webhook_queue_max_size: 1000
+  # Background consumer thread count
+  # webhook_queue_workers: 2
+  # Polling interval in minutes.
+  # If schedule_interval is not set:
+  # - defaults to 1 minute without webhook_secret
+  # - defaults to 15 minutes with webhook_secret
+  # schedule_interval: 15
+  # Dedup marker: written to content after processing for dedup detection
+  # dedup_marker: "<!-- miniflux-ai:processed -->"
+  base_url: https://your-miniflux.example.com
+  api_key: YOUR_MINIFLUX_API_KEY
   # webhook_secret is required when using Miniflux webhook integration.
   webhook_secret: YOUR_MINIFLUX_WEBHOOK_SECRET
   # Polling interval in minutes.

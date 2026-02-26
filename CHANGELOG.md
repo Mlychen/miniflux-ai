@@ -2,6 +2,35 @@
 
 All notable changes to this project will be documented in this file.
 
+## 2026-02-26
+
+### Added
+
+- New config options for single-entry mode:
+  - `miniflux.entry_mode`: `auto | webhook | polling`, default `auto`
+  - `miniflux.webhook_queue_max_size`: queue max size, default 1000
+  - `miniflux.webhook_queue_workers`: background workers, default 2
+  - `miniflux.dedup_marker`: dedup marker, default `<!-- miniflux-ai:processed -->`
+- New repository: `ProcessedEntriesRepository` for tracking processed entry IDs
+- New module: `core/queue.py` with `QueueBackend` protocol and `InMemoryQueueBackend` implementation
+
+### Changed
+
+- Simplified entry mode: now only one entry (webhook OR polling) is active based on config
+- `process_entry()` now supports deduplication via:
+  - Content marker detection
+  - Processed entries tracking
+- `build_rate_limited_processor()` now accepts `processed_entries_repository` parameter
+
+### Migration Notes
+
+- If using webhook mode, configure `miniflux.entry_mode` and `miniflux.webhook_secret`
+- Default `entry_mode=auto` maintains backward compatibility
+
+## 2026-02-25
+
+All notable changes to this project will be documented in this file.
+
 ## 2026-02-25
 
 ### Changed

@@ -10,6 +10,10 @@ class Config:
         self.miniflux_api_key = self.get_config_value('miniflux', 'api_key', None)
         self.miniflux_webhook_secret = self.get_config_value('miniflux', 'webhook_secret', None)
         self.miniflux_schedule_interval = self.get_config_value('miniflux', 'schedule_interval', None)
+        self.miniflux_entry_mode = self.get_config_value('miniflux', 'entry_mode', 'auto')
+        self.miniflux_webhook_queue_max_size = self.get_config_value('miniflux', 'webhook_queue_max_size', 1000)
+        self.miniflux_webhook_queue_workers = self.get_config_value('miniflux', 'webhook_queue_workers', 2)
+        self.miniflux_dedup_marker = self.get_config_value('miniflux', 'dedup_marker', '<!-- miniflux-ai:processed -->')
 
         self.llm_provider = self.get_config_value('llm', 'provider', 'openai')
         self.llm_base_url = self.get_config_value('llm', 'base_url', None)

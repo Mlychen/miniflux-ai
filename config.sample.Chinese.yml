@@ -4,6 +4,27 @@ log_level: "INFO"
 miniflux:
   base_url: https://your-miniflux.example.com
   api_key: YOUR_MINIFLUX_API_KEY
+  # 入口模式: auto | webhook | polling，默认 auto
+  # auto: 有 webhook_secret 则 webhook，否则 polling
+  # webhook: 只启动 webhook 入口（Flask），不启动轮询
+  # polling: 只启动轮询，不启动 webhook
+  # entry_mode: auto
+  # 使用 Miniflux webhook 时必须配置 webhook_secret
+  webhook_secret: YOUR_MINIFLUX_WEBHOOK_SECRET
+  # webhook 队列缓冲设置（仅 entry_mode=webhook 时生效）
+  # 队列最大容量，超过返回 429
+  # webhook_queue_max_size: 1000
+  # 后台消费线程数
+  # webhook_queue_workers: 2
+  # 轮询间隔（分钟）
+  # 未设置 schedule_interval 时：
+  # - defaults to 1 minute without webhook_secret
+  # - defaults to 15 minutes with webhook_secret
+  # schedule_interval: 15
+  # 去重标记：处理完成后写入内容，用于去重检测
+  # dedup_marker: "<!-- miniflux-ai:processed -->"
+  base_url: https://your-miniflux.example.com
+  api_key: YOUR_MINIFLUX_API_KEY
   # 使用 Miniflux webhook 时必须配置 webhook_secret
   webhook_secret: YOUR_MINIFLUX_WEBHOOK_SECRET
   # 轮询间隔（分钟）

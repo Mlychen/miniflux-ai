@@ -12,11 +12,48 @@ from common.ai_news_repository import AiNewsRepository
 from common.config import Config
 from common.entries_repository import EntriesRepository
 from common.logger import get_logger
+from common.processed_entries_repository import ProcessedEntriesRepository
+from common.logger import get_logger
 from core.ai_news_helpers import has_ai_news_feed
 from core.fetch_unread_entries import fetch_unread_entries
 from core.generate_daily_news import generate_daily_news
 from core.process_entries import build_rate_limited_processor
 from myapp import create_app
+
+
+def resolve_entry_mode(config):
+    """Resolve final entry mode based on config and webhook_secret."""
+    entry_mode = config.miniflux_entry_mode
+    webhook_secret = config.miniflux_webhook_secret
+    
+    if entry_mode == 'auto':
+        # auto: use webhook if webhook_secret exists, otherwise polling
+        return 'webhook' if webhook_secret else 'polling'
+    
+    if entry_mode == 'webhook':
+        if not webhook_secret:
+            raise ValueError("entry_mode='webhook' requires webhook_secret to be configured")
+        return 'webhook'
+    
+    if entry_mode == 'polling':
+        return 'polling'
+    
+    raise ValueError(f"Invalid entry_mode: {entry_mode}. Must be one of: auto, webhook, polling")
+
+
+def should_start_flask(entry_mode, config):
+    """Determine if Flask (webhook) should be started."""
+    if entry_mode == 'webhook':
+        return True
+    # Also start Flask if ai_news_schedule is configured (for RSS feed access)
+    if config.ai_news_schedule:
+        return True
+    return False
+
+
+def should_start_polling(entry_mode):
+    """Determine if polling should be started."""
+    return entry_mode == 'polling'
 
 
 @dataclass(frozen=True)
@@ -135,6 +172,36 @@ def bootstrap(config_path='config.yml'):
 
 
 if __name__ == '__main__':
+    import sys
+    
+    services = bootstrap()
+    
+    # Resolve entry mode
+    try:
+        entry_mode = resolve_entry_mode(services.config)
+    except ValueError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
+    
+    # Warn if webhook_secret is configured but entry_mode is polling
+    if entry_mode == 'polling' and services.config.miniflux_webhook_secret:
+        print("Warning: webhook_secret is configured but entry_mode='polling'. Webhook is disabled.", file=sys.stderr)
+    
+    logger = services.logger
+    logger.info(f"Entry mode: {entry_mode}")
+    
+    # Wait for Miniflux connection
+    wait_for_miniflux(services.miniflux_client, logger)
+    
+    # Start selected entry points based on entry_mode
+    with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+        if should_start_flask(entry_mode, services.config):
+            executor.submit(my_flask, services)
+            logger.info("Starting Flask (webhook) entry")
+        
+        if should_start_polling(entry_mode):
+            executor.submit(my_schedule, services)
+            logger.info("Starting polling entry")
     services = bootstrap()
     wait_for_miniflux(services.miniflux_client, services.logger)
 
