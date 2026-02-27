@@ -7,14 +7,17 @@ import traceback
 import schedule
 
 from adapters import LLMGateway, MinifluxGateway
-from adapters.protocols import LLMGatewayProtocol, MinifluxGatewayProtocol
+from adapters.protocols import LLMClientProtocol, MinifluxGatewayProtocol
 from common.ai_news_repository import AiNewsRepository
+from common.ai_news_repository_sqlite import AiNewsRepositorySQLite
 from common.config import Config
 from common.entries_repository import EntriesRepository
+from common.entries_repository_sqlite import EntriesRepositorySQLite
 from common.logger import get_logger
 from core.ai_news_helpers import has_ai_news_feed
 from core.fetch_unread_entries import fetch_unread_entries
 from core.generate_daily_news import generate_daily_news
+from core.llm_pool import LLMRequestPool
 from core.process_entries import InMemoryProcessedNewsIds, build_rate_limited_processor
 from core.process_entries_batch import process_entries_batch
 from core.queue import InMemoryQueueBackend, WebhookQueue
@@ -52,6 +55,8 @@ def should_start_flask(entry_mode, config):
     # Also start Flask if ai_news_schedule is configured (for RSS feed access)
     if config.ai_news_schedule:
         return True
+    if getattr(config, "debug_enabled", False):
+        return True
     return False
 
 
@@ -70,7 +75,7 @@ class RuntimeServices:
     config: Config
     logger: object
     miniflux_client: MinifluxGatewayProtocol
-    llm_client: LLMGatewayProtocol
+    llm_client: LLMClientProtocol
     entry_processor: object
     entries_repository: EntriesRepository
     ai_news_repository: AiNewsRepository
@@ -87,7 +92,7 @@ def wait_for_miniflux(miniflux_client, logger):
             time.sleep(3)
 
 
-def my_schedule(services):
+def my_schedule(services, entry_mode):
     config = services.config
     logger = services.logger
     miniflux_client = services.miniflux_client
@@ -96,43 +101,50 @@ def my_schedule(services):
     entries_repository = services.entries_repository
     ai_news_repository = services.ai_news_repository
 
-    if config.miniflux_schedule_interval:
-        interval = config.miniflux_schedule_interval
-    else:
-        interval = 15 if config.miniflux_webhook_secret else 1
+    if entry_mode == "polling":
+        if config.miniflux_schedule_interval:
+            interval = config.miniflux_schedule_interval
+        else:
+            interval = 15 if config.miniflux_webhook_secret else 1
 
-    schedule.every(interval).minutes.do(
-        fetch_unread_entries,
-        config,
-        miniflux_client,
-        entry_processor,
-        llm_client,
-        logger,
-    )
-    schedule.run_all()
+        schedule.every(interval).minutes.do(
+            fetch_unread_entries,
+            config,
+            miniflux_client,
+            entry_processor,
+            llm_client,
+            logger,
+        )
+        schedule.run_all()
 
     if config.ai_news_schedule:
         feeds = miniflux_client.get_feeds()
         if not has_ai_news_feed(feeds):
             try:
                 miniflux_client.create_feed(
-                    category_id=1, feed_url=config.ai_news_url + "/miniflux-ai/rss/ai-news"
+                    category_id=1,
+                    feed_url=config.ai_news_url + "/miniflux-ai/rss/ai-news",
                 )
                 logger.info("Successfully created the ai_news feed in Miniflux!")
             except Exception as e:
                 logger.error("Failed to create the ai_news feed in Miniflux: %s" % e)
 
         for ai_schedule in config.ai_news_schedule:
-            schedule.every().day.at(ai_schedule).do(
-                generate_daily_news,
-                miniflux_client,
-                config,
-                llm_client,
-                logger,
-                ai_news_repository,
-                entries_repository,
-            )
-            logger.info(f"Successfully added the ai_news schedule: {ai_schedule}")
+            try:
+                schedule.every().day.at(ai_schedule).do(
+                    generate_daily_news,
+                    miniflux_client,
+                    config,
+                    llm_client,
+                    logger,
+                    ai_news_repository,
+                    entries_repository,
+                )
+                logger.info(f"Successfully added the ai_news schedule: {ai_schedule}")
+            except Exception as e:
+                logger.error(
+                    f"Failed to add the ai_news schedule: {ai_schedule} error={e}"
+                )
 
     while True:
         try:
@@ -212,25 +224,45 @@ def my_flask(services, entry_mode):
         webhook_queue=webhook_queue,
     )
     logger.info("Starting API")
-    app.run(host="0.0.0.0", port=80)
+    cfg = services.config
+    host = getattr(cfg, "debug_host", "0.0.0.0") or "0.0.0.0"
+    if getattr(cfg, "debug_enabled", False):
+        port = getattr(cfg, "debug_port", 8081)
+    else:
+        port = 80
+    app.run(host=host, port=port)
 
 
 def bootstrap(config_path="config.yml"):
     config = Config.from_file(config_path)
     logger = get_logger(config.log_level)
-    file_lock = threading.Lock()
     miniflux_client = MinifluxGateway(config.miniflux_base_url, config.miniflux_api_key)
-    llm_client = LLMGateway(config)
-    entries_file = "entries.json"
-    entries_repository = EntriesRepository(path=entries_file, lock=file_lock)
+    gateway = LLMGateway(config)
+    llm_client = LLMRequestPool(
+        gateway,
+        max_concurrent=getattr(config, "llm_max_workers", 4),
+        rpm_limit=getattr(config, "llm_RPM", None),
+        daily_limit=getattr(config, "llm_daily_limit", None),
+        capacity=getattr(config, "llm_pool_capacity", None),
+    )
+    storage_backend = getattr(config, "storage_backend", "json")
+    sqlite_path = getattr(config, "storage_sqlite_path", "runtime/miniflux_ai.db")
+    entries_lock = threading.Lock()
+    ai_news_lock = threading.Lock()
+    if storage_backend == "sqlite":
+        entries_repository = EntriesRepositorySQLite(
+            path=sqlite_path, lock=entries_lock
+        )
+        ai_news_repository = AiNewsRepositorySQLite(path=sqlite_path, lock=ai_news_lock)
+    else:
+        entries_repository = EntriesRepository(path="entries.json", lock=entries_lock)
+        ai_news_repository = AiNewsRepository(path="ai_news.json", lock=ai_news_lock)
     processed_news_ids = InMemoryProcessedNewsIds()
     entry_processor = build_rate_limited_processor(
         config,
         entries_repository=entries_repository,
         processed_news_ids=processed_news_ids,
     )
-    ai_news_file = "ai_news.json"
-    ai_news_repository = AiNewsRepository(path=ai_news_file, lock=file_lock)
 
     return RuntimeServices(
         config=config,
@@ -274,6 +306,6 @@ if __name__ == "__main__":
             executor.submit(my_flask, services, entry_mode)
             logger.info("Starting Flask (webhook) entry")
 
-        if should_start_polling(entry_mode):
-            executor.submit(my_schedule, services)
-            logger.info("Starting polling entry")
+        if should_start_polling(entry_mode) or services.config.ai_news_schedule:
+            executor.submit(my_schedule, services, entry_mode)
+            logger.info("Starting scheduler entry")
