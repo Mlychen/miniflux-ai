@@ -1,0 +1,1705 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>miniflux-ai Debug Console</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <style>
+      :root {
+        /* 主色调 - 专业蓝灰 */
+        --bg-primary: #0d1117;
+        --bg-secondary: #161b22;
+        --bg-tertiary: #21262d;
+        --bg-card: #ffffff;
+
+        /* 边框 */
+        --border-primary: #30363d;
+        --border-secondary: #d0d7de;
+        --border-focus: #58a6ff;
+
+        /* 文字 */
+        --text-primary: #24292f;
+        --text-secondary: #57606a;
+        --text-muted: #8b949e;
+        --text-inverse: #f0f6fc;
+
+        /* 状态色 */
+        --success-bg: #dafbe1;
+        --success-text: #1a7f37;
+        --success-border: #4ac26b;
+        --error-bg: #ffebe9;
+        --error-text: #cf222e;
+        --error-border: #f18b89;
+        --warning-bg: #fff8c5;
+        --warning-text: #9a6700;
+        --warning-border: #d4a72c;
+        --info-bg: #ddf4ff;
+        --info-text: #0969da;
+        --info-border: #54aeff;
+
+        /* 代码块 */
+        --code-bg: #161b22;
+        --code-text: #e6e6e6;
+        --code-comment: #8b949e;
+        --code-key: #79c0ff;
+        --code-string: #a5d6ff;
+        --code-number: #79c0ff;
+
+        /* 间距 */
+        --space-xs: 4px;
+        --space-sm: 8px;
+        --space-md: 12px;
+        --space-lg: 16px;
+        --space-xl: 24px;
+
+        /* 圆角 */
+        --radius-sm: 4px;
+        --radius-md: 6px;
+        --radius-lg: 10px;
+        --radius-xl: 12px;
+
+        /* 阴影 */
+        --shadow-sm: 0 1px 3px rgba(0,0,0,0.08);
+        --shadow-md: 0 4px 12px rgba(0,0,0,0.1);
+        --shadow-lg: 0 8px 24px rgba(0,0,0,0.12);
+
+        /* 字体 */
+        --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+        --font-mono: 'JetBrains Mono', 'SF Mono', Consolas, monospace;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        padding: 0;
+        font-family: var(--font-sans);
+        font-size: 14px;
+        line-height: 1.5;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        min-height: 100vh;
+      }
+
+      /* 顶部导航栏 */
+      .header {
+        background: var(--bg-primary);
+        border-bottom: 1px solid var(--border-primary);
+        padding: var(--space-md) var(--space-xl);
+        position: sticky;
+        top: 0;
+        z-index: 100;
+        backdrop-filter: blur(10px);
+      }
+
+      .header-content {
+        max-width: 1400px;
+        margin: 0 auto;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+      }
+
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: var(--space-md);
+      }
+
+      .brand-icon {
+        width: 32px;
+        height: 32px;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        border-radius: var(--radius-md);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 18px;
+        font-weight: 700;
+        color: white;
+      }
+
+      .brand-title {
+        font-size: 16px;
+        font-weight: 600;
+        color: var(--text-inverse);
+        letter-spacing: -0.02em;
+      }
+
+      .brand-subtitle {
+        font-size: 12px;
+        color: var(--text-muted);
+        margin-left: var(--space-sm);
+      }
+
+      .status-bar {
+        display: flex;
+        align-items: center;
+        gap: var(--space-lg);
+      }
+
+      .status-item {
+        display: flex;
+        align-items: center;
+        gap: var(--space-xs);
+        font-size: 12px;
+        color: var(--text-muted);
+        font-family: var(--font-mono);
+      }
+
+      .status-dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: var(--success-text);
+        animation: pulse 2s infinite;
+      }
+
+      @keyframes pulse {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.5; }
+      }
+
+      .status-dot.error { background: var(--error-text); }
+      .status-dot.warning { background: var(--warning-text); }
+
+      /* 主内容区 */
+      .main {
+        max-width: 1400px;
+        margin: 0 auto;
+        padding: var(--space-xl);
+      }
+
+      /* 卡片网格 */
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+        gap: var(--space-lg);
+      }
+
+      .grid .full {
+        grid-column: 1 / -1;
+      }
+
+      /* 卡片样式 */
+      .card {
+        background: var(--bg-card);
+        border-radius: var(--radius-lg);
+        box-shadow: var(--shadow-md);
+        border: 1px solid rgba(0,0,0,0.08);
+        overflow: hidden;
+        transition: transform 0.2s ease, box-shadow 0.2s ease;
+      }
+
+      .card:hover {
+        transform: translateY(-2px);
+        box-shadow: var(--shadow-lg);
+      }
+
+      .card-header {
+        background: linear-gradient(135deg, #f6f8fa 0%, #ffffff 100%);
+        border-bottom: 1px solid var(--border-secondary);
+        padding: var(--space-md) var(--space-lg);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+      }
+
+      .card-title {
+        font-size: 13px;
+        font-weight: 600;
+        color: var(--text-primary);
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        display: flex;
+        align-items: center;
+        gap: var(--space-sm);
+      }
+
+      .card-icon {
+        width: 20px;
+        height: 20px;
+        opacity: 0.6;
+      }
+
+      .card-body {
+        padding: var(--space-lg);
+      }
+
+      /* 输入控件 */
+      .input-group {
+        display: flex;
+        align-items: center;
+        gap: var(--space-md);
+        flex-wrap: wrap;
+      }
+
+      .input-label {
+        font-size: 13px;
+        font-weight: 500;
+        color: var(--text-primary);
+      }
+
+      .input {
+        padding: var(--space-sm) var(--space-md);
+        border: 1px solid var(--border-secondary);
+        border-radius: var(--radius-md);
+        font-family: var(--font-mono);
+        font-size: 13px;
+        background: #fff;
+        transition: border-color 0.2s ease, box-shadow 0.2s ease;
+        min-width: 100px;
+      }
+
+      .input:focus {
+        outline: none;
+        border-color: var(--border-focus);
+        box-shadow: 0 0 0 3px rgba(88, 166, 255, 0.15);
+      }
+
+      .input::placeholder {
+        color: var(--text-muted);
+      }
+
+      /* 按钮 */
+      .btn {
+        padding: var(--space-sm) var(--space-md);
+        border: 1px solid var(--border-secondary);
+        border-radius: var(--radius-md);
+        font-family: var(--font-sans);
+        font-size: 13px;
+        font-weight: 500;
+        cursor: pointer;
+        transition: all 0.2s ease;
+        background: #fff;
+        color: var(--text-primary);
+        display: inline-flex;
+        align-items: center;
+        gap: var(--space-xs);
+      }
+
+      .btn:hover:not(:disabled) {
+        background: #f6f8fa;
+        border-color: var(--border-primary);
+      }
+
+      .btn:active:not(:disabled) {
+        transform: translateY(1px);
+      }
+
+      .btn:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+      }
+
+      .btn-primary {
+        background: linear-gradient(135deg, #238636 0%, #2ea043 100%);
+        border-color: #238636;
+        color: white;
+      }
+
+      .btn-primary:hover:not(:disabled) {
+        background: linear-gradient(135deg, #2ea043 0%, #3fb950 100%);
+        border-color: #2ea043;
+      }
+
+      .btn-danger {
+        background: linear-gradient(135deg, #da3633 0%, #f85149 100%);
+        border-color: #da3633;
+        color: white;
+      }
+
+      .btn-danger:hover:not(:disabled) {
+        background: linear-gradient(135deg, #f85149 0%, #ff7b72 100%);
+        border-color: #f85149;
+      }
+
+      /* 代码输出 */
+      .code-block {
+        margin-top: var(--space-md);
+        padding: var(--space-md);
+        background: var(--code-bg);
+        border-radius: var(--radius-md);
+        overflow: auto;
+        max-height: 280px;
+        font-family: var(--font-mono);
+        font-size: 12px;
+        line-height: 1.6;
+        color: var(--code-text);
+        border: 1px solid var(--border-primary);
+      }
+
+      .code-block:empty::before {
+        content: '等待操作...';
+        color: var(--code-comment);
+      }
+
+      /* 表格 */
+      .table-container {
+        margin-top: var(--space-md);
+        border: 1px solid var(--border-secondary);
+        border-radius: var(--radius-md);
+        overflow: hidden;
+        max-height: 400px;
+        overflow-y: auto;
+      }
+
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 13px;
+      }
+
+      thead {
+        background: linear-gradient(135deg, #f6f8fa 0%, #ffffff 100%);
+        position: sticky;
+        top: 0;
+        z-index: 10;
+      }
+
+      th {
+        padding: var(--space-sm) var(--space-md);
+        text-align: left;
+        font-size: 11px;
+        font-weight: 600;
+        color: var(--text-secondary);
+        text-transform: uppercase;
+        letter-spacing: 0.03em;
+        border-bottom: 1px solid var(--border-secondary);
+      }
+
+      td {
+        padding: var(--space-sm) var(--space-md);
+        border-bottom: 1px solid #f0f0f0;
+        vertical-align: top;
+      }
+
+      tbody tr:hover {
+        background: #f6f8fa;
+      }
+
+      tbody tr:last-child td {
+        border-bottom: none;
+      }
+
+      /* 状态徽章 */
+      .badge {
+        display: inline-flex;
+        align-items: center;
+        padding: 2px 8px;
+        border-radius: 999px;
+        font-size: 11px;
+        font-weight: 500;
+        font-family: var(--font-mono);
+        letter-spacing: 0.02em;
+      }
+
+      .badge-success {
+        background: var(--success-bg);
+        color: var(--success-text);
+        border: 1px solid var(--success-border);
+      }
+
+      .badge-error {
+        background: var(--error-bg);
+        color: var(--error-text);
+        border: 1px solid var(--error-border);
+      }
+
+      .badge-warning {
+        background: var(--warning-bg);
+        color: var(--warning-text);
+        border: 1px solid var(--warning-border);
+      }
+
+      .badge-info {
+        background: var(--info-bg);
+        color: var(--info-text);
+        border: 1px solid var(--info-border);
+      }
+
+      /* 统计信息 */
+      .stats-row {
+        display: flex;
+        gap: var(--space-md);
+        margin-top: var(--space-md);
+        flex-wrap: wrap;
+      }
+
+      .stat {
+        display: flex;
+        align-items: center;
+        gap: var(--space-sm);
+        padding: var(--space-sm) var(--space-md);
+        background: #f6f8fa;
+        border-radius: var(--radius-md);
+        border: 1px solid var(--border-secondary);
+        font-size: 12px;
+      }
+
+      .stat-label {
+        color: var(--text-secondary);
+        font-weight: 500;
+      }
+
+      .stat-value {
+        font-family: var(--font-mono);
+        font-weight: 600;
+        color: var(--text-primary);
+      }
+
+      /* 链接 */
+      .link {
+        color: #0969da;
+        text-decoration: none;
+        font-weight: 500;
+        transition: all 0.15s ease;
+      }
+
+      .link:hover {
+        text-decoration: underline;
+        color: #0550ae;
+      }
+
+      /* 处理追踪时间线 */
+      .timeline {
+        position: relative;
+        padding-left: var(--space-lg);
+        margin: var(--space-md) 0;
+      }
+
+      .timeline::before {
+        content: '';
+        position: absolute;
+        left: 6px;
+        top: 0;
+        bottom: 0;
+        width: 2px;
+        background: var(--border-secondary);
+      }
+
+      .timeline-item {
+        position: relative;
+        padding-bottom: var(--space-md);
+        padding-left: var(--space-md);
+      }
+
+      .timeline-item::before {
+        content: '';
+        position: absolute;
+        left: -10px;
+        top: 4px;
+        width: 12px;
+        height: 12px;
+        border-radius: 50%;
+        background: var(--bg-card);
+        border: 2px solid var(--border-secondary);
+        z-index: 1;
+      }
+
+      .timeline-item.success::before {
+        border-color: var(--success-text);
+        background: var(--success-bg);
+      }
+
+      .timeline-item.error::before {
+        border-color: var(--error-text);
+        background: var(--error-bg);
+      }
+
+      .timeline-item.warning::before {
+        border-color: var(--warning-text);
+        background: var(--warning-bg);
+      }
+
+      .timeline-item.info::before {
+        border-color: var(--info-text);
+        background: var(--info-bg);
+      }
+
+      .timeline-content {
+        background: #f6f8fa;
+        border-radius: var(--radius-md);
+        padding: var(--space-sm) var(--space-md);
+        border: 1px solid var(--border-secondary);
+      }
+
+      .timeline-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: var(--space-xs);
+      }
+
+      .timeline-stage {
+        font-weight: 600;
+        font-size: 13px;
+        color: var(--text-primary);
+      }
+
+      .timeline-time {
+        font-size: 11px;
+        color: var(--text-muted);
+        font-family: var(--font-mono);
+      }
+
+      .timeline-details {
+        font-size: 12px;
+        color: var(--text-secondary);
+      }
+
+      .timeline-detail-row {
+        display: flex;
+        gap: var(--space-md);
+        margin-top: var(--space-xs);
+        flex-wrap: wrap;
+      }
+
+      .timeline-detail-item {
+        display: flex;
+        align-items: center;
+        gap: var(--space-xs);
+        font-size: 11px;
+        font-family: var(--font-mono);
+      }
+
+      .timeline-detail-label {
+        color: var(--text-muted);
+      }
+
+      .timeline-detail-value {
+        color: var(--text-primary);
+        font-weight: 500;
+      }
+
+      /* 空状态 */
+      .empty-state {
+        text-align: center;
+        padding: var(--space-xl) var(--space-lg);
+        color: var(--text-muted);
+      }
+
+      .empty-state-icon {
+        font-size: 48px;
+        margin-bottom: var(--space-md);
+        opacity: 0.3;
+      }
+
+      .empty-state-text {
+        font-size: 14px;
+        color: var(--text-secondary);
+      }
+
+      /* 类别标签 */
+      .category-tag {
+        display: inline-block;
+        padding: 2px 6px;
+        background: #eaeef2;
+        border-radius: var(--radius-sm);
+        font-size: 11px;
+        font-family: var(--font-mono);
+        color: var(--text-secondary);
+      }
+
+      /* 滚动条 */
+      ::-webkit-scrollbar {
+        width: 8px;
+        height: 8px;
+      }
+
+      ::-webkit-scrollbar-track {
+        background: #f6f8fa;
+        border-radius: 4px;
+      }
+
+      ::-webkit-scrollbar-thumb {
+        background: #d0d7de;
+        border-radius: 4px;
+      }
+
+      ::-webkit-scrollbar-thumb:hover {
+        background: #8b949e;
+      }
+
+      /* 响应式 */
+      @media (max-width: 768px) {
+        .grid {
+          grid-template-columns: 1fr;
+        }
+
+        .header-content {
+          flex-direction: column;
+          gap: var(--space-md);
+          text-align: center;
+        }
+
+        .status-bar {
+          justify-content: center;
+        }
+      }
+
+      /* 加载动画 */
+      .spinner {
+        width: 16px;
+        height: 16px;
+        border: 2px solid #eaeef2;
+        border-top-color: #0969da;
+        border-radius: 50%;
+        animation: spin 0.8s linear infinite;
+      }
+
+      @keyframes spin {
+        to { transform: rotate(360deg); }
+      }
+    </style>
+  </head>
+  <body>
+    <!-- 顶部导航栏 -->
+    <header class="header">
+      <div class="header-content">
+        <div class="brand">
+          <div class="brand-icon">AI</div>
+          <div>
+            <div class="brand-title">miniflux-ai</div>
+            <div class="brand-subtitle">Debug Console</div>
+          </div>
+        </div>
+        <div class="status-bar">
+          <div class="status-item">
+            <span class="status-dot" id="statusDot"></span>
+            <span id="statusText">就绪</span>
+          </div>
+          <div class="status-item">
+            <span>Origin:</span>
+            <span class="mono" id="origin" style="margin-left: 4px;"></span>
+          </div>
+          <div class="status-item">
+            <span>最近请求:</span>
+            <span class="mono" id="last" style="margin-left: 4px;">-</span>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <!-- 主内容区 -->
+    <main class="main">
+      <div class="grid">
+        <!-- 手动处理卡片 -->
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title">
+              <svg class="card-icon" viewBox="0 0 16 16" fill="currentColor">
+                <path d="M10.478 1.647a.5.5 0 10-.956-.294l-4 13a.5.5 0 00.956.294l4-13zM4 10a.5.5 0 01-.5-.5V1.73A2.5 2.5 0 015.207 0h5.586A2.5 2.5 0 0113.207 2.5v3a.5.5 0 01-1 0v-3a1.5 1.5 0 00-1.414-1.5H5.207A1.5 1.5 0 004.207 2.5V9.5A.5.5 0 014 10z"/>
+              </svg>
+              手动处理
+            </div>
+          </div>
+          <div class="card-body">
+            <div class="input-group">
+              <label class="input-label" for="entryId">Entry ID</label>
+              <input class="input" id="entryId" type="text" inputmode="numeric" placeholder="例如 123" />
+              <button class="btn btn-primary" id="btnManual">
+                <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
+                  <path d="M11.742 5.5a.5.5 0 10-.744.67l1.902 2.113-1.902 2.113a.5.5 0 10.744.67l2.25-2.5a.5.5 0 000-.67l-2.25-2.5zM2 8.5a6.5 6.5 0 1111.32 4.33.5.5 0 11-.64-.766A5.5 5.5 0 103 8.5a.5.5 0 01-1 0z"/>
+                </svg>
+                触发处理
+              </button>
+            </div>
+            <pre class="code-block mono" id="outManual"></pre>
+          </div>
+        </div>
+
+        <!-- 处理追踪卡片 -->
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title">
+              <svg class="card-icon" viewBox="0 0 16 16" fill="currentColor">
+                <path d="M8.5 1a1.5 1.5 0 100 3 1.5 1.5 0 000-3zM11 3.5a.5.5 0 01.5-.5h3a.5.5 0 01.5.5v10a.5.5 0 01-.5.5h-3a.5.5 0 01-.5-.5v-10zM2 3.5a.5.5 0 01.5-.5h3a.5.5 0 01.5.5v10a.5.5 0 01-.5.5h-3a.5.5 0 01-.5-.5v-10z"/>
+              </svg>
+              处理追踪
+            </div>
+          </div>
+          <div class="card-body">
+            <div class="input-group">
+              <label class="input-label" for="traceEntryId">Entry ID</label>
+              <input class="input" id="traceEntryId" type="text" inputmode="numeric" placeholder="例如 123" />
+              <button class="btn btn-primary" id="btnTrace">查询</button>
+              <button class="btn" id="btnClearTrace">清空</button>
+            </div>
+            <!-- 追踪摘要 -->
+            <div id="traceSummary" style="display: none; margin-top: var(--space-md);">
+              <div class="stats-row">
+                <div class="stat">
+                  <span class="stat-label">状态</span>
+                  <span class="stat-value" id="traceStatus"></span>
+                </div>
+                <div class="stat">
+                  <span class="stat-label">总耗时</span>
+                  <span class="stat-value" id="traceDuration"></span>
+                </div>
+                <div class="stat">
+                  <span class="stat-label">处理阶段</span>
+                  <span class="stat-value" id="traceStagesCount"></span>
+                </div>
+              </div>
+              <div class="timeline-detail-row" style="margin-top: var(--space-sm);">
+                <div class="timeline-detail-item">
+                  <span class="timeline-detail-label">Canonical ID:</span>
+                  <span class="timeline-detail-value" id="traceCanonicalId"></span>
+                </div>
+                <div class="timeline-detail-item">
+                  <span class="timeline-detail-label">类别:</span>
+                  <span class="timeline-detail-value" id="traceCategory"></span>
+                </div>
+              </div>
+            </div>
+            <!-- 时间线 -->
+            <div id="traceTimeline" class="timeline" style="display: none; margin-top: var(--space-md); max-height: 400px; overflow-y: auto;"></div>
+            <pre class="code-block mono" id="outTrace"></pre>
+          </div>
+        </div>
+
+        <!-- LLM 指标卡片 -->
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title">
+              <svg class="card-icon" viewBox="0 0 16 16" fill="currentColor">
+                <path d="M0 4.5a.5.5 0 01.5-.5h1a.5.5 0 01.5.5v1a.5.5 0 01-.5.5h-1a.5.5 0 01-.5-.5v-1zm3 0a.5.5 0 01.5-.5h1a.5.5 0 01.5.5v1a.5.5 0 01-.5.5h-1a.5.5 0 01-.5-.5v-1zm3.5-.5a.5.5 0 00-.5.5v1a.5.5 0 00.5.5h1a.5.5 0 00.5-.5v-1a.5.5 0 00-.5-.5h-1zm3.5.5a.5.5 0 01.5-.5h1a.5.5 0 01.5.5v1a.5.5 0 01-.5.5h-1a.5.5 0 01-.5-.5v-1zM0 9.5a.5.5 0 01.5-.5h1a.5.5 0 01.5.5v1a.5.5 0 01-.5.5h-1a.5.5 0 01-.5-.5v-1zm3 0a.5.5 0 01.5-.5h1a.5.5 0 01.5.5v1a.5.5 0 01-.5.5h-1a.5.5 0 01-.5-.5v-1zm3.5-.5a.5.5 0 00-.5.5v1a.5.5 0 00.5.5h1a.5.5 0 00.5-.5v-1a.5.5 0 00-.5-.5h-1zm3.5.5a.5.5 0 01.5-.5h1a.5.5 0 01.5.5v1a.5.5 0 01-.5.5h-1a.5.5 0 01-.5-.5v-1z"/>
+                <path d="M1.5 7a.5.5 0 01.5-.5h6a.5.5 0 010 1H2a.5.5 0 01-.5-.5zM0 11.5a.5.5 0 01.5-.5h6a.5.5 0 010 1H2a.5.5 0 01-.5-.5z"/>
+              </svg>
+              LLM 指标
+            </div>
+          </div>
+          <div class="card-body">
+            <div class="input-group">
+              <button class="btn" id="btnMetrics">
+                <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
+                  <path d="M11.536 3.464a5 5 0 010 7.072.5.5 0 11-.708-.707 4 4 0 000-5.656.5.5 0 11.708-.708z"/>
+                  <path d="M15 8a6 6 0 11-12 0 6 6 0 0112 0z"/>
+                  <path d="M8 3a.5.5 0 01.5.5v4a.5.5 0 01-1 0v-4A.5.5 0 018 3z"/>
+                </svg>
+                刷新指标
+              </button>
+            </div>
+            <pre class="code-block mono" id="outMetrics"></pre>
+          </div>
+        </div>
+
+        <!-- 失败条目卡片 -->
+        <div class="card full">
+          <div class="card-header">
+            <div class="card-title">
+              <svg class="card-icon" viewBox="0 0 16 16" fill="currentColor">
+                <path d="M8.982 1.566a1.13 1.13 0 00-1.96 0L.165 13.233c-.457.778.091 1.767.98 1.767h13.713c.889 0 1.438-.99.98-1.767L8.982 1.566zM8 5c.535 0 .954.462.9.995l-.35 3.507a.552.552 0 01-1.1 0L7.1 5.995A.905.905 0 018 5zm.002 6a1 1 0 110 2 1 1 0 010-2z"/>
+              </svg>
+              失败条目
+            </div>
+            <div class="input-group">
+              <label class="input-label" for="failedLimit">Limit</label>
+              <input class="input" id="failedLimit" type="text" inputmode="numeric" value="100" style="width: 80px" />
+              <button class="btn" id="btnFailed">加载</button>
+              <button class="btn btn-danger" id="btnClearAll">清空池</button>
+            </div>
+          </div>
+          <div class="card-body" style="padding: 0;">
+            <div class="table-container">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Entry Key</th>
+                    <th>状态</th>
+                    <th>尝试次数</th>
+                    <th>创建时间</th>
+                    <th>最后尝试</th>
+                    <th>TTL</th>
+                    <th>URL</th>
+                    <th>操作</th>
+                  </tr>
+                </thead>
+                <tbody id="failedBody">
+                  <tr>
+                    <td colspan="8" class="empty-state">
+                      <div class="empty-state-icon">⚠️</div>
+                      <div class="empty-state-text">点击"加载"按钮查看失败条目</div>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <pre class="code-block mono" id="outFailed" style="border-top: none; border-radius: 0 0 var(--radius-md) var(--radius-md);"></pre>
+          </div>
+        </div>
+
+        <!-- 已处理条目卡片 -->
+        <div class="card full">
+          <div class="card-header">
+            <div class="card-title">
+              <svg class="card-icon" viewBox="0 0 16 16" fill="currentColor">
+                <path d="M14 1a1 1 0 011 1v12a1 1 0 01-1 1H2a1 1 0 01-1-1V2a1 1 0 011-1h12zM2 0a2 2 0 00-2 2v12a2 2 0 002 2h12a2 2 0 002-2V2a2 2 0 00-2-2H2z"/>
+                <path d="M10.97 4.97a.75.75 0 011.071 1.05l-3.992 4.99a.75.75 0 01-1.08.02L4.324 8.384a.75.75 0 111.06-1.06l2.094 2.093 3.473-4.425a.235.235 0 01.02-.022z"/>
+              </svg>
+              已处理条目
+            </div>
+            <div class="input-group">
+              <label class="input-label" for="processedLimit">Limit</label>
+              <input class="input" id="processedLimit" type="text" inputmode="numeric" value="100" style="width: 80px" />
+              <label class="input-label" for="processedOffset">Offset</label>
+              <input class="input" id="processedOffset" type="text" inputmode="numeric" value="0" style="width: 80px" />
+              <button class="btn btn-primary" id="btnProcessed">加载</button>
+              <button class="btn" id="btnRefreshProcessed">
+                <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
+                  <path d="M11.536 3.464a5 5 0 010 7.072.5.5 0 11-.708-.707 4 4 0 000-5.656.5.5 0 11.708-.708z"/>
+                  <path d="M15 8a6 6 0 11-12 0 6 6 0 0112 0z"/>
+                </svg>
+                刷新
+              </button>
+            </div>
+          </div>
+          <div class="card-body" style="padding: 0;">
+            <!-- 统计信息 -->
+            <div style="padding: var(--space-md); border-bottom: 1px solid var(--border-secondary);">
+              <div class="stats-row">
+                <div class="stat">
+                  <span class="stat-label">总数</span>
+                  <span class="stat-value" id="processedTotal">0</span>
+                </div>
+                <div class="stat">
+                  <span class="stat-label">当前范围</span>
+                  <span class="stat-value" id="processedRange">0-0</span>
+                </div>
+                <div class="stat">
+                  <span class="stat-label">显示数量</span>
+                  <span class="stat-value" id="processedCount">0</span>
+                </div>
+              </div>
+            </div>
+            <!-- 表格 -->
+            <div class="table-container">
+              <table>
+                <thead>
+                  <tr>
+                    <th>ID</th>
+                    <th>Canonical ID</th>
+                    <th>标题</th>
+                    <th>类别</th>
+                    <th>发布时间</th>
+                    <th>URL</th>
+                  </tr>
+                </thead>
+                <tbody id="processedBody">
+                  <tr>
+                    <td colspan="6" class="empty-state">
+                      <div class="empty-state-icon">📭</div>
+                      <div class="empty-state-text">点击"加载"按钮查看已处理条目</div>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <pre class="code-block mono" id="outProcessed" style="border-top: none; border-radius: 0 0 var(--radius-md) var(--radius-md);"></pre>
+          </div>
+        </div>
+
+        <!-- 处理历史卡片 -->
+        <div class="card full">
+          <div class="card-header">
+            <div class="card-title">
+              <svg class="card-icon" viewBox="0 0 16 16" fill="currentColor">
+                <path d="M9 8a1 1 0 100-2 1 1 0 000 2zM6 6.5a1.5 1.5 0 11-3 0 1.5 1.5 0 013 0zM15 8a6 6 0 11-12 0 6 6 0 0112 0zM8.5 4a.5.5 0 00-1 0v3.5a.5.5 0 00.276.448l2.5 1.25a.5.5 0 10.448-.896L8.5 7.25V4z"/>
+              </svg>
+              处理历史
+            </div>
+            <div class="input-group">
+              <label class="input-label" for="historyLimit">Limit</label>
+              <input class="input" id="historyLimit" type="text" inputmode="numeric" value="20" style="width: 80px" />
+              <button class="btn btn-primary" id="btnHistory">加载</button>
+              <button class="btn" id="btnRefreshHistory">
+                <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
+                  <path d="M11.536 3.464a5 5 0 010 7.072.5.5 0 11-.708-.707 4 4 0 000-5.656.5.5 0 11.708-.708z"/>
+                  <path d="M15 8a6 6 0 11-12 0 6 6 0 0112 0z"/>
+                </svg>
+                刷新
+              </button>
+            </div>
+          </div>
+          <div class="card-body" style="padding: 0;">
+            <div style="padding: var(--space-md); border-bottom: 1px solid var(--border-secondary);">
+              <div class="stats-row">
+                <div class="stat">
+                  <span class="stat-label">总数</span>
+                  <span class="stat-value" id="historyTotal">0</span>
+                </div>
+                <div class="stat">
+                  <span class="stat-label">显示数量</span>
+                  <span class="stat-value" id="historyCount">0</span>
+                </div>
+              </div>
+            </div>
+            <div class="table-container">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Entry ID</th>
+                    <th>Trace ID</th>
+                    <th>状态</th>
+                    <th>总耗时</th>
+                    <th>处理阶段</th>
+                    <th>Canonical ID</th>
+                    <th>类别</th>
+                    <th>开始时间</th>
+                    <th>操作</th>
+                  </tr>
+                </thead>
+                <tbody id="historyBody">
+                  <tr>
+                    <td colspan="9" class="empty-state">
+                      <div class="empty-state-icon">📭</div>
+                      <div class="empty-state-text">点击"加载"按钮查看处理历史</div>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <pre class="code-block mono" id="outHistory"></pre>
+          </div>
+        </div>
+
+      </div>
+    </main>
+
+    <script>
+      (function () {
+        // DOM 元素
+        const originEl = document.getElementById('origin');
+        const lastEl = document.getElementById('last');
+        const statusDot = document.getElementById('statusDot');
+        const statusText = document.getElementById('statusText');
+
+        originEl.textContent = window.location.origin;
+
+        // 工具函数
+        function pretty(obj) {
+          try {
+            return JSON.stringify(obj, null, 2);
+          } catch (e) {
+            return String(obj);
+          }
+        }
+
+        function setLast(method, url, status, ms) {
+          lastEl.textContent = `${method} ${url} -> ${status} (${ms}ms)`;
+
+          // 更新状态指示器
+          if (status >= 500) {
+            statusDot.className = 'status-dot error';
+            statusText.textContent = '服务器错误';
+          } else if (status >= 400) {
+            statusDot.className = 'status-dot warning';
+            statusText.textContent = '客户端错误';
+          } else {
+            statusDot.className = 'status-dot';
+            statusText.textContent = '就绪';
+          }
+
+          // 3 秒后恢复
+          setTimeout(() => {
+            statusDot.className = 'status-dot';
+            statusText.textContent = '就绪';
+          }, 3000);
+        }
+
+        function request(method, url, body) {
+          const start = performance.now();
+          const opt = { method, headers: {} };
+          if (body !== undefined) {
+            opt.headers['Content-Type'] = 'application/json';
+            opt.body = JSON.stringify(body);
+          }
+          return fetch(url, opt).then(function (resp) {
+            const ms = Math.round(performance.now() - start);
+            return resp.text().then(function (text) {
+              let data = null;
+              try {
+                data = text ? JSON.parse(text) : null;
+              } catch (e) {
+                data = { raw: text };
+              }
+              setLast(method, url, resp.status, ms);
+              if (!resp.ok) {
+                const err = new Error('HTTP ' + resp.status);
+                err.response = data;
+                throw err;
+              }
+              return data;
+            }).catch(function (err) {
+              setLast(method, url, resp.status, ms);
+              throw err;
+            });
+          });
+        }
+
+        // ========== 手动处理 ==========
+        const btnManual = document.getElementById('btnManual');
+        const outManual = document.getElementById('outManual');
+        const entryId = document.getElementById('entryId');
+
+        btnManual.addEventListener('click', function () {
+          const v = (entryId.value || '').trim();
+          outManual.textContent = '';
+          if (!v) {
+            outManual.textContent = '请输入 entry_id';
+            return;
+          }
+          btnManual.disabled = true;
+          btnManual.innerHTML = '<div class="spinner"></div> 处理中...';
+          request('POST', '/miniflux-ai/manual-process', { entry_id: v })
+            .then(function (data) {
+              outManual.textContent = pretty(data);
+            })
+            .catch(function (e) {
+              outManual.textContent = pretty({ error: e.message, response: e.response || null });
+            })
+            .finally(function () {
+              btnManual.disabled = false;
+              btnManual.innerHTML = `
+                <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
+                  <path d="M11.742 5.5a.5.5 0 10-.744.67l1.902 2.113-1.902 2.113a.5.5 0 10.744.67l2.25-2.5a.5.5 0 000-.67l-2.25-2.5zM2 8.5a6.5 6.5 0 1111.32 4.33.5.5 0 11-.64-.766A5.5 5.5 0 103 8.5a.5.5 0 01-1 0z"/>
+                </svg>
+                触发处理
+              `;
+            });
+        });
+
+        // ========== LLM 指标 ==========
+        const btnMetrics = document.getElementById('btnMetrics');
+        const outMetrics = document.getElementById('outMetrics');
+
+        btnMetrics.addEventListener('click', function () {
+          outMetrics.textContent = '';
+          btnMetrics.disabled = true;
+          btnMetrics.innerHTML = '<div class="spinner"></div> 加载中...';
+          request('GET', '/miniflux-ai/user/llm-pool/metrics')
+            .then(function (data) {
+              outMetrics.textContent = pretty(data);
+            })
+            .catch(function (e) {
+              outMetrics.textContent = pretty({ error: e.message, response: e.response || null });
+            })
+            .finally(function () {
+              btnMetrics.disabled = false;
+              btnMetrics.innerHTML = `
+                <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
+                  <path d="M11.536 3.464a5 5 0 010 7.072.5.5 0 11-.708-.707 4 4 0 000-5.656.5.5 0 11.708-.708z"/>
+                  <path d="M15 8a6 6 0 11-12 0 6 6 0 0112 0z"/>
+                </svg>
+                刷新指标
+              `;
+            });
+        });
+
+        // ========== 失败条目 ==========
+        const btnFailed = document.getElementById('btnFailed');
+        const btnClearAll = document.getElementById('btnClearAll');
+        const outFailed = document.getElementById('outFailed');
+        const failedBody = document.getElementById('failedBody');
+        const failedLimit = document.getElementById('failedLimit');
+
+        function getStatusBadge(status) {
+          const map = {
+            'failed': 'error',
+            'pending': 'warning',
+            'processing': 'info',
+            'success': 'success'
+          };
+          const type = map[status] || 'info';
+          return `<span class="badge badge-${type}">${status || 'unknown'}</span>`;
+        }
+
+        function renderFailed(items) {
+          failedBody.innerHTML = '';
+          if (!items || items.length === 0) {
+            failedBody.innerHTML = `
+              <tr>
+                <td colspan="8" class="empty-state">
+                  <div class="empty-state-icon">✅</div>
+                  <div class="empty-state-text">暂无失败条目</div>
+                </td>
+              </tr>
+            `;
+            return;
+          }
+
+          items.forEach(function (it) {
+            const tr = document.createElement('tr');
+
+            // Entry Key
+            const tdKey = document.createElement('td');
+            tdKey.className = 'mono';
+            tdKey.style.fontSize = '12px';
+            tdKey.textContent = it.entry_key;
+            tr.appendChild(tdKey);
+
+            // Status
+            const tdStatus = document.createElement('td');
+            tdStatus.innerHTML = getStatusBadge(it.status);
+            tr.appendChild(tdStatus);
+
+            // Attempts
+            const tdAttempts = document.createElement('td');
+            tdAttempts.className = 'mono';
+            tdAttempts.textContent = `${it.attempts_used || 0}/${it.max_attempts || '?'}`;
+            tr.appendChild(tdAttempts);
+
+            // Created
+            const tdCreated = document.createElement('td');
+            tdCreated.textContent = it.created_at ? new Date(it.created_at).toLocaleString('zh-CN') : '-';
+            tr.appendChild(tdCreated);
+
+            // Last Attempt
+            const tdLast = document.createElement('td');
+            tdLast.textContent = it.last_attempt_at ? new Date(it.last_attempt_at).toLocaleString('zh-CN') : '-';
+            tr.appendChild(tdLast);
+
+            // TTL
+            const tdTtl = document.createElement('td');
+            tdTtl.className = 'mono';
+            tdTtl.textContent = it.ttl_seconds != null ? `${it.ttl_seconds}s` : '-';
+            tr.appendChild(tdTtl);
+
+            // URL
+            const tdUrl = document.createElement('td');
+            if (it.url) {
+              const a = document.createElement('a');
+              a.href = it.url;
+              a.target = '_blank';
+              a.rel = 'noreferrer';
+              a.textContent = '打开';
+              a.className = 'link';
+              tdUrl.appendChild(a);
+            } else {
+              tdUrl.textContent = '-';
+            }
+            tr.appendChild(tdUrl);
+
+            // Actions
+            const tdOp = document.createElement('td');
+            const reset = document.createElement('button');
+            reset.className = 'btn';
+            reset.textContent = '重置';
+            reset.addEventListener('click', (function (entryKey) {
+              return function () {
+                reset.disabled = true;
+                reset.textContent = '重置中...';
+                request('POST', '/miniflux-ai/user/llm-pool/clear', { entry_key })
+                  .then(function (data) {
+                    outFailed.textContent = pretty(data);
+                    loadFailed();
+                    btnMetrics.click();
+                  })
+                  .catch(function (e) {
+                    outFailed.textContent = pretty({ error: e.message, response: e.response || null });
+                  })
+                  .finally(function () {
+                    reset.disabled = false;
+                    reset.textContent = '重置';
+                  });
+              };
+            })(it.entry_key));
+            tdOp.appendChild(reset);
+            tr.appendChild(tdOp);
+
+            failedBody.appendChild(tr);
+          });
+        }
+
+        function loadFailed() {
+          outFailed.textContent = '';
+          btnFailed.disabled = true;
+          btnFailed.textContent = '加载中...';
+          const n = parseInt((failedLimit.value || '100').trim(), 10) || 100;
+          request('GET', `/miniflux-ai/user/llm-pool/failed-entries?limit=${encodeURIComponent(n)}`)
+            .then(function (data) {
+              outFailed.textContent = pretty({ status: data.status, count: (data.items || []).length });
+              renderFailed(data.items || []);
+            })
+            .catch(function (e) {
+              outFailed.textContent = pretty({ error: e.message, response: e.response || null });
+            })
+            .finally(function () {
+              btnFailed.disabled = false;
+              btnFailed.textContent = '加载';
+            });
+        }
+
+        btnFailed.addEventListener('click', loadFailed);
+
+        btnClearAll.addEventListener('click', function () {
+          outFailed.textContent = '';
+          btnClearAll.disabled = true;
+          btnClearAll.textContent = '清空中...';
+          request('POST', '/miniflux-ai/user/llm-pool/clear', {})
+            .then(function (data) {
+              outFailed.textContent = pretty(data);
+              loadFailed();
+              btnMetrics.click();
+            })
+            .catch(function (e) {
+              outFailed.textContent = pretty({ error: e.message, response: e.response || null });
+            })
+            .finally(function () {
+              btnClearAll.disabled = false;
+              btnClearAll.textContent = '清空池';
+            });
+        });
+
+        // ========== 已处理条目 ==========
+        const btnProcessed = document.getElementById('btnProcessed');
+        const btnRefreshProcessed = document.getElementById('btnRefreshProcessed');
+        const outProcessed = document.getElementById('outProcessed');
+        const processedBody = document.getElementById('processedBody');
+        const processedTotal = document.getElementById('processedTotal');
+        const processedRange = document.getElementById('processedRange');
+        const processedCount = document.getElementById('processedCount');
+        const processedLimitInput = document.getElementById('processedLimit');
+        const processedOffsetInput = document.getElementById('processedOffset');
+
+        function getCategoryBadge(category) {
+          if (!category || category === '-') {
+            return '<span class="category-tag">未分类</span>';
+          }
+          const colors = {
+            '科技': 'info',
+            'AI': 'success',
+            '产品': 'warning',
+            '研究': 'error'
+          };
+          const type = colors[category] || 'info';
+          return `<span class="badge badge-${type}">${category}</span>`;
+        }
+
+        function renderProcessedEntries(entries) {
+          processedBody.innerHTML = '';
+
+          if (!entries || entries.length === 0) {
+            processedBody.innerHTML = `
+              <tr>
+                <td colspan="6" class="empty-state">
+                  <div class="empty-state-icon">📭</div>
+                  <div class="empty-state-text">暂无已处理条目</div>
+                </td>
+              </tr>
+            `;
+            return;
+          }
+
+          entries.forEach(function (it) {
+            const tr = document.createElement('tr');
+
+            // ID
+            const tdId = document.createElement('td');
+            tdId.className = 'mono';
+            tdId.style.fontSize = '12px';
+            tdId.textContent = it.id || '-';
+            tr.appendChild(tdId);
+
+            // Canonical ID
+            const tdCanonical = document.createElement('td');
+            tdCanonical.className = 'mono';
+            tdCanonical.style.fontSize = '12px';
+            tdCanonical.textContent = it.canonical_id || '-';
+            tr.appendChild(tdCanonical);
+
+            // Title
+            const tdTitle = document.createElement('td');
+            let titleText = it.title || '';
+            if (titleText.length > 60) {
+              titleText = titleText.substring(0, 60) + '...';
+            }
+            tdTitle.textContent = titleText;
+            tdTitle.style.maxWidth = '300px';
+            tdTitle.title = it.title || '';
+            tr.appendChild(tdTitle);
+
+            // Category
+            const tdCategory = document.createElement('td');
+            tdCategory.innerHTML = getCategoryBadge(it.ai_category);
+            tr.appendChild(tdCategory);
+
+            // Published At
+            const tdTime = document.createElement('td');
+            const datetime = it.published_at || it.datetime || it.created_at || '';
+            tdTime.textContent = datetime ? new Date(datetime).toLocaleString('zh-CN') : '-';
+            tr.appendChild(tdTime);
+
+            // URL
+            const tdUrl = document.createElement('td');
+            if (it.url) {
+              const a = document.createElement('a');
+              a.href = it.url;
+              a.target = '_blank';
+              a.rel = 'noreferrer';
+              a.textContent = '打开';
+              a.className = 'link';
+              tdUrl.appendChild(a);
+            } else {
+              tdUrl.textContent = '-';
+            }
+            tr.appendChild(tdUrl);
+
+            processedBody.appendChild(tr);
+          });
+        }
+
+        function loadProcessedEntries() {
+          outProcessed.textContent = '';
+          btnProcessed.disabled = true;
+          btnRefreshProcessed.disabled = true;
+
+          const limitVal = parseInt((processedLimitInput.value || '100').trim(), 10) || 100;
+          const offsetVal = parseInt((processedOffsetInput.value || '0').trim(), 10) || 0;
+
+          const url = `/miniflux-ai/user/processed-entries?limit=${encodeURIComponent(limitVal)}&offset=${encodeURIComponent(offsetVal)}`;
+
+          request('GET', url)
+            .then(function (data) {
+              outProcessed.textContent = pretty({
+                status: data.status,
+                total: data.total,
+                returned: (data.entries || []).length,
+              });
+              processedTotal.textContent = String(data.total || 0);
+              processedCount.textContent = String((data.entries || []).length);
+
+              if (data.total === 0) {
+                processedRange.textContent = '0-0';
+              } else {
+                const start = offsetVal + 1;
+                const end = Math.min(offsetVal + limitVal, data.total);
+                processedRange.textContent = `${start}-${end}`;
+              }
+              renderProcessedEntries(data.entries || []);
+            })
+            .catch(function (e) {
+              outProcessed.textContent = pretty({ error: e.message, response: e.response || null });
+            })
+            .finally(function () {
+              btnProcessed.disabled = false;
+              btnRefreshProcessed.disabled = false;
+            });
+        }
+
+        btnProcessed.addEventListener('click', loadProcessedEntries);
+        btnRefreshProcessed.addEventListener('click', loadProcessedEntries);
+
+        // ========== 处理追踪 ==========
+        const btnTrace = document.getElementById('btnTrace');
+        const btnClearTrace = document.getElementById('btnClearTrace');
+        const outTrace = document.getElementById('outTrace');
+        const traceEntryId = document.getElementById('traceEntryId');
+        const traceSummary = document.getElementById('traceSummary');
+        const traceTimeline = document.getElementById('traceTimeline');
+        const traceStatus = document.getElementById('traceStatus');
+        const traceDuration = document.getElementById('traceDuration');
+        const traceStagesCount = document.getElementById('traceStagesCount');
+        const traceCanonicalId = document.getElementById('traceCanonicalId');
+        const traceCategory = document.getElementById('traceCategory');
+
+        function getStatusBadgeClass(status) {
+          const map = {
+            'success': 'badge-success',
+            'error': 'badge-error',
+            'pending': 'badge-warning',
+            'skipped': 'badge-info'
+          };
+          return map[status] || 'badge-info';
+        }
+
+        function formatTime(timestamp) {
+          if (!timestamp) return '-';
+          try {
+            return new Date(timestamp).toLocaleString('zh-CN');
+          } catch (e) {
+            return timestamp;
+          }
+        }
+
+        function formatDuration(ms) {
+          if (ms === null || ms === undefined) return '-';
+          if (ms < 1000) return Math.round(ms) + 'ms';
+          return (ms / 1000).toFixed(2) + 's';
+        }
+
+        function renderTimeline(stages) {
+          if (!stages || stages.length === 0) {
+            traceTimeline.innerHTML = '<div class="empty-state"><div class="empty-state-text">暂无处理阶段</div></div>';
+            return;
+          }
+
+          const stageLabels = {
+            'process': '处理',
+            'dedup': '去重检查',
+            'preprocess': '预处理',
+            'canonical_id': '生成 Canonical ID',
+            'agent_process': 'Agent 处理',
+            'save_result': '保存结果',
+            'update_miniflux': '更新 Miniflux',
+          };
+
+          const actionLabels = {
+            'start': '开始',
+            'complete': '完成',
+            'error': '错误',
+            'skipped': '跳过',
+            'filtered': '已过滤',
+            'passed': '通过',
+            'generated': '已生成',
+            'llm_call_start': 'LLM 调用开始',
+            'llm_call_complete': 'LLM 调用完成',
+            'llm_call_error': 'LLM 调用错误',
+            'parse_error': '解析错误',
+            'saving': '保存中',
+          };
+
+          traceTimeline.innerHTML = '';
+
+          stages.forEach(function(stage, index) {
+            const div = document.createElement('div');
+            div.className = 'timeline-item ' + (stage.status || 'info');
+
+            const stageLabel = stageLabels[stage.stage] || stage.stage;
+            const actionLabel = actionLabels[stage.action] || stage.action;
+            const statusText = stage.status === 'success' ? '✓ 完成' : stage.status === 'error' ? '✗ 错误' : stage.status;
+
+            let detailsHtml = '';
+            if (stage.data) {
+              const data = stage.data;
+              const details = [];
+
+              if (data.agent) details.push('<span class="timeline-detail-item"><span class="timeline-detail-label">Agent:</span> <span class="timeline-detail-value">' + data.agent + '</span></span>');
+              if (data.response_length) details.push('<span class="timeline-detail-item"><span class="timeline-detail-label">响应长度:</span> <span class="timeline-detail-value">' + data.response_length + '</span></span>');
+              if (data.canonical_id) details.push('<span class="timeline-detail-item"><span class="timeline-detail-label">Canonical ID:</span> <span class="timeline-detail-value mono" style="font-size:10px;">' + data.canonical_id.substring(0, 16) + '...</span></span>');
+              if (data.ai_category) details.push('<span class="timeline-detail-item"><span class="timeline-detail-label">类别:</span> <span class="timeline-detail-value">' + data.ai_category + '</span></span>');
+              if (data.agents_processed) details.push('<span class="timeline-detail-item"><span class="timeline-detail-label">Agents:</span> <span class="timeline-detail-value">' + data.agents_processed + '</span></span>');
+              if (data.content_length) details.push('<span class="timeline-detail-item"><span class="timeline-detail-label">内容长度:</span> <span class="timeline-detail-value">' + data.content_length + '</span></span>');
+              if (data.error) details.push('<span class="timeline-detail-item" style="color:var(--error-text);"><span class="timeline-detail-label">错误:</span> <span class="timeline-detail-value">' + data.error + '</span></span>');
+              if (data.reason) details.push('<span class="timeline-detail-item"><span class="timeline-detail-label">原因:</span> <span class="timeline-detail-value">' + data.reason + '</span></span>');
+
+              if (details.length > 0) {
+                detailsHtml = '<div class="timeline-detail-row" style="margin-top:var(--space-xs);">' + details.join('') + '</div>';
+              }
+            }
+
+            div.innerHTML = `
+              <div class="timeline-content">
+                <div class="timeline-header">
+                  <span class="timeline-stage">${stageLabel} - ${actionLabel}</span>
+                  <span class="timeline-time">${formatTime(stage.timestamp)}</span>
+                </div>
+                <div class="timeline-details">
+                  <span class="badge ${getStatusBadgeClass(stage.status)}">${statusText}</span>
+                  ${stage.duration_ms ? '<span class="timeline-detail-item" style="margin-left:var(--space-sm);"><span class="timeline-detail-label">耗时:</span> <span class="timeline-detail-value">' + formatDuration(stage.duration_ms) + '</span></span>' : ''}
+                  ${detailsHtml}
+                </div>
+              </div>
+            `;
+
+            traceTimeline.appendChild(div);
+          });
+        }
+
+        function loadProcessTrace() {
+          const entryId = (traceEntryId.value || '').trim();
+          outTrace.textContent = '';
+          traceSummary.style.display = 'none';
+          traceTimeline.style.display = 'none';
+
+          if (!entryId) {
+            outTrace.textContent = '请输入 entry_id';
+            return;
+          }
+
+          btnTrace.disabled = true;
+          btnTrace.textContent = '查询中...';
+
+          request('GET', `/miniflux-ai/user/process-trace/${encodeURIComponent(entryId)}`)
+            .then(function (data) {
+              if (data.status === 'not_found') {
+                outTrace.textContent = '未找到该 entry_id 的处理记录';
+                return;
+              }
+
+              outTrace.textContent = pretty({
+                status: data.status,
+                entry_id: data.entry_id,
+                trace_id: data.trace_id,
+                stages_count: (data.stages || []).length,
+              });
+
+              // 显示摘要
+              if (data.summary) {
+                const summary = data.summary;
+                traceStatus.innerHTML = `<span class="badge ${getStatusBadgeClass(summary.status)}">${summary.status === 'success' ? '成功' : summary.status === 'error' ? '失败' : summary.status}</span>`;
+                traceDuration.textContent = formatDuration(summary.total_duration_ms);
+                traceStagesCount.textContent = summary.stages_count || 0;
+                traceCanonicalId.textContent = summary.canonical_id || '-';
+                traceCategory.textContent = summary.ai_category || '-';
+                traceSummary.style.display = 'block';
+              }
+
+              // 显示时间线
+              if (data.stages && data.stages.length > 0) {
+                renderTimeline(data.stages);
+                traceTimeline.style.display = 'block';
+              }
+            })
+            .catch(function (e) {
+              outTrace.textContent = pretty({ error: e.message, response: e.response || null });
+            })
+            .finally(function () {
+              btnTrace.disabled = false;
+              btnTrace.textContent = '查询';
+            });
+        }
+
+        btnTrace.addEventListener('click', loadProcessTrace);
+
+        btnClearTrace.addEventListener('click', function () {
+          traceEntryId.value = '';
+          outTrace.textContent = '';
+          traceSummary.style.display = 'none';
+          traceTimeline.style.display = 'none';
+        });
+
+        // ========== 处理历史 ==========
+        const btnHistory = document.getElementById('btnHistory');
+        const btnRefreshHistory = document.getElementById('btnRefreshHistory');
+        const outHistory = document.getElementById('outHistory');
+        const historyBody = document.getElementById('historyBody');
+        const historyLimit = document.getElementById('historyLimit');
+        const historyTotal = document.getElementById('historyTotal');
+        const historyCount = document.getElementById('historyCount');
+
+        function renderHistoryTable(traces) {
+          historyBody.innerHTML = '';
+
+          if (!traces || traces.length === 0) {
+            historyBody.innerHTML = `
+              <tr>
+                <td colspan="9" class="empty-state">
+                  <div class="empty-state-icon">📭</div>
+                  <div class="empty-state-text">暂无处理历史</div>
+                </td>
+              </tr>
+            `;
+            return;
+          }
+
+          traces.forEach(function (trace) {
+            const tr = document.createElement('tr');
+
+            // Entry ID
+            const tdEntryId = document.createElement('td');
+            tdEntryId.className = 'mono';
+            tdEntryId.style.fontSize = '12px';
+            tdEntryId.textContent = trace.entry_id || '-';
+            tr.appendChild(tdEntryId);
+
+            // Trace ID
+            const tdTraceId = document.createElement('td');
+            tdTraceId.className = 'mono';
+            tdTraceId.style.fontSize = '10px';
+            tdTraceId.textContent = (trace.trace_id || '').substring(0, 8) + '...';
+            tr.appendChild(tdTraceId);
+
+            // Status
+            const tdStatus = document.createElement('td');
+            tdStatus.innerHTML = `<span class="badge ${getStatusBadgeClass(trace.status)}">${trace.status === 'success' ? '成功' : trace.status === 'error' ? '失败' : trace.status}</span>`;
+            tr.appendChild(tdStatus);
+
+            // Duration
+            const tdDuration = document.createElement('td');
+            tdDuration.className = 'mono';
+            tdDuration.textContent = formatDuration(trace.total_duration_ms);
+            tr.appendChild(tdDuration);
+
+            // Stages Count
+            const tdStages = document.createElement('td');
+            tdStages.className = 'mono';
+            tdStages.textContent = trace.stages_count || 0;
+            tr.appendChild(tdStages);
+
+            // Canonical ID
+            const tdCanonical = document.createElement('td');
+            tdCanonical.className = 'mono';
+            tdCanonical.style.fontSize = '11px';
+            tdCanonical.textContent = (trace.canonical_id || '').substring(0, 16) + '...' || '-';
+            tr.appendChild(tdCanonical);
+
+            // Category
+            const tdCategory = document.createElement('td');
+            tdCategory.innerHTML = trace.ai_category ? `<span class="category-tag">${trace.ai_category}</span>` : '<span class="category-tag">未分类</span>';
+            tr.appendChild(tdCategory);
+
+            // Start Time
+            const tdTime = document.createElement('td');
+            tdTime.textContent = formatTime(trace.start_time);
+            tr.appendChild(tdTime);
+
+            // Actions
+            const tdOp = document.createElement('td');
+            const viewBtn = document.createElement('button');
+            viewBtn.className = 'btn';
+            viewBtn.textContent = '查看';
+            viewBtn.addEventListener('click', function () {
+              traceEntryId.value = trace.entry_id || '';
+              loadProcessTrace();
+            });
+            tdOp.appendChild(viewBtn);
+            tr.appendChild(tdOp);
+
+            historyBody.appendChild(tr);
+          });
+        }
+
+        function loadProcessHistory() {
+          outHistory.textContent = '';
+          btnHistory.disabled = true;
+          btnRefreshHistory.disabled = true;
+
+          const limitVal = parseInt((historyLimit.value || '20').trim(), 10) || 20;
+
+          request('GET', `/miniflux-ai/user/process-history?limit=${encodeURIComponent(limitVal)}`)
+            .then(function (data) {
+              outHistory.textContent = pretty({
+                status: data.status,
+                total: data.total,
+                returned: (data.traces || []).length,
+              });
+
+              historyTotal.textContent = String(data.total || 0);
+              historyCount.textContent = String((data.traces || []).length);
+
+              renderHistoryTable(data.traces || []);
+            })
+            .catch(function (e) {
+              outHistory.textContent = pretty({ error: e.message, response: e.response || null });
+            })
+            .finally(function () {
+              btnHistory.disabled = false;
+              btnRefreshHistory.disabled = false;
+            });
+        }
+
+        btnHistory.addEventListener('click', loadProcessHistory);
+        btnRefreshHistory.addEventListener('click', loadProcessHistory);
+
+        // 页面加载时自动加载一次处理历史
+        loadProcessHistory();
+      })();
+    </script>
+  </body>
+</html>
