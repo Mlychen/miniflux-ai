@@ -72,6 +72,33 @@
 
 ## API 使用
 
+### 手动触发处理
+
+```bash
+POST /miniflux-ai/manual-process
+```
+
+请求体示例：
+```json
+{
+  "entry_id": 123,
+  "trace_id": "9f2d7b0f2a8b4d69a2fef7c5f3a0c2d1"
+}
+```
+
+说明：
+- `trace_id` 为可选字段。
+- 若不传 `trace_id`，后端会自动生成并在响应中返回。
+
+成功响应示例：
+```json
+{
+  "status": "ok",
+  "entry_id": "123",
+  "trace_id": "9f2d7b0f2a8b4d69a2fef7c5f3a0c2d1"
+}
+```
+
 ### 获取处理追踪
 
 ```bash

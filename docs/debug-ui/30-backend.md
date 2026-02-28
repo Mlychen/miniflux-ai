@@ -7,9 +7,11 @@
 ### 手动触发处理
 
 - `POST /miniflux-ai/manual-process`
-- body：`{"entry_id": 123}`
+- body：
+  - `{"entry_id": 123}`
+  - 或 `{"entry_id": 123, "trace_id": "32位hex字符串"}`
 - 返回：
-  - 200：`{"status":"ok","entry_id":"123"}`
+  - 200：`{"status":"ok","entry_id":"123","trace_id":"..."}`
   - 400：缺少/非法 entry_id
   - 404：entry 不存在
   - 500：处理失败
@@ -59,12 +61,14 @@ items 每项通常包含：
 
 用途：Debug UI 首页直接展示运行态信息，避免“接口 404 是没启动 Flask 还是路由问题”。
 
-### 建议 2：为每次 manual-process 增加 trace_id
+### 已实现：manual-process trace_id 透传
 
-- `manual-process` 响应里返回 `trace_id`
-- 日志统一带上该 trace_id
+- `manual-process` 支持可选请求字段 `trace_id`
+- 若未传入，后端会自动生成 `trace_id`
+- 响应始终返回 `trace_id`
+- 处理追踪日志统一带该 `trace_id`
 
-用途：Debug UI 中点击一次触发，可直接用 trace_id 在日志中定位全链路。
+用途：Debug UI 点击一次触发后，可直接按 `trace_id` 查询完整处理链路。
 
 ### 建议 3：最近处理记录（轻量审计）
 

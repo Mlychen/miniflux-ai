@@ -1,7 +1,9 @@
 import threading
 import os
+import uuid
 from typing import cast
 
+import miniflux
 from flask import Flask, current_app, jsonify, request, redirect, send_from_directory
 
 from adapters.protocols import LLMRequestPoolProtocol
@@ -23,7 +25,7 @@ def create_app(
     ai_news_repository=None,
     webhook_queue=None,
 ):
-    storage_backend = getattr(config, "storage_backend", "json")
+    storage_backend = getattr(config, "storage_backend", "sqlite")
     sqlite_path = getattr(config, "storage_sqlite_path", "runtime/miniflux_ai.db")
 
     if entries_repository is None:
@@ -88,6 +90,81 @@ def create_app(
         def debug_static(filename):
             return send_from_directory(debug_dir, filename)
 
+        @app.route("/miniflux-ai/user/miniflux/me", methods=["GET"])
+        def debug_miniflux_me():
+            services = get_app_services(current_app)
+            miniflux_client = services.miniflux_client
+            logger = services.logger
+            try:
+                me = miniflux_client.me()
+                return jsonify({"status": "ok", "me": me})
+            except miniflux.ClientError as e:
+                if logger:
+                    logger.error(
+                        f"debug-miniflux-me: miniflux error status_code={e.status_code} reason={e.get_error_reason()}"
+                    )
+                return jsonify({"status": "error", "message": "miniflux error"}), 502
+            except Exception as e:
+                if logger:
+                    logger.error(f"debug-miniflux-me: unexpected error error={e}")
+                return jsonify({"status": "error", "message": "unexpected error"}), 500
+
+        @app.route("/miniflux-ai/user/miniflux/entry/<int:entry_id>", methods=["GET"])
+        def debug_miniflux_entry(entry_id: int):
+            services = get_app_services(current_app)
+            miniflux_client = services.miniflux_client
+            logger = services.logger
+            try:
+                entry = (
+                    miniflux_client.get_entry(entry_id)
+                    if hasattr(miniflux_client, "get_entry")
+                    else None
+                )
+                if not entry:
+                    return (
+                        jsonify(
+                            {
+                                "status": "error",
+                                "message": "entry not found",
+                                "entry_id": str(entry_id),
+                            }
+                        ),
+                        404,
+                    )
+                slim = {
+                    "id": entry.get("id"),
+                    "status": entry.get("status"),
+                    "title": entry.get("title"),
+                    "url": entry.get("url"),
+                    "feed_id": entry.get("feed_id"),
+                    "published_at": entry.get("published_at"),
+                    "created_at": entry.get("created_at"),
+                }
+                return jsonify({"status": "ok", "entry": slim})
+            except miniflux.ResourceNotFound:
+                return (
+                    jsonify(
+                        {
+                            "status": "error",
+                            "message": "entry not found",
+                            "entry_id": str(entry_id),
+                        }
+                    ),
+                    404,
+                )
+            except miniflux.ClientError as e:
+                if logger:
+                    logger.error(
+                        f"debug-miniflux-entry: miniflux error entry_id={entry_id} status_code={e.status_code} reason={e.get_error_reason()}"
+                    )
+                return jsonify({"status": "error", "message": "miniflux error"}), 502
+            except Exception as e:
+                if logger:
+                    logger.error(
+                        f"debug-miniflux-entry: unexpected error entry_id={entry_id} error={e}"
+                    )
+                return jsonify({"status": "error", "message": "unexpected error"}), 500
+
     @app.route("/miniflux-ai/manual-process", methods=["POST"])
     def manual_process():
         services = get_app_services(current_app)
@@ -106,21 +183,44 @@ def create_app(
         if not entry_id_str.isdigit():
             return jsonify({"status": "error", "message": "invalid entry_id"}), 400
         entry_id = int(entry_id_str)
+        trace_id_raw = data.get("trace_id")
+        trace_id = str(trace_id_raw).strip() if trace_id_raw is not None else ""
+        if not trace_id:
+            trace_id = uuid.uuid4().hex
 
-        entries = []
+        if logger:
+            logger.info(
+                f"manual-process: request entry_id={entry_id_str} trace_id={trace_id} remote={request.remote_addr}"
+            )
+
         try:
-            response = miniflux_client.get_entries(entry_ids=[entry_id], limit=1)
-            entries = (response or {}).get("entries") or []
-        except TypeError:
-            try:
-                response = miniflux_client.get_entries(entry_ids=[entry_id])
+            if hasattr(miniflux_client, "get_entry"):
+                entry = miniflux_client.get_entry(entry_id)
+                entries = [entry] if entry else []
+            else:
+                response = miniflux_client.get_entries(entry_ids=[entry_id], limit=1)
                 entries = (response or {}).get("entries") or []
-            except Exception:
-                entries = []
-        except Exception:
-            entries = []
 
-        if not entries:
+            if not entries:
+                if logger:
+                    logger.error(
+                        f"manual-process: entry not found entry_id={entry_id_str} remote={request.remote_addr}"
+                    )
+                return (
+                    jsonify(
+                        {
+                            "status": "error",
+                            "message": "entry not found",
+                            "entry_id": entry_id_str,
+                        }
+                    ),
+                    404,
+                )
+        except miniflux.ResourceNotFound:
+            if logger:
+                logger.error(
+                    f"manual-process: entry not found entry_id={entry_id_str} remote={request.remote_addr}"
+                )
             return (
                 jsonify(
                     {
@@ -131,10 +231,86 @@ def create_app(
                 ),
                 404,
             )
+        except miniflux.AccessUnauthorized as e:
+            if logger:
+                logger.error(
+                    f"manual-process: miniflux unauthorized entry_id={entry_id_str} reason={e.get_error_reason()}"
+                )
+            return (
+                jsonify(
+                    {
+                        "status": "error",
+                        "message": "miniflux unauthorized",
+                        "entry_id": entry_id_str,
+                    }
+                ),
+                502,
+            )
+        except miniflux.AccessForbidden as e:
+            if logger:
+                logger.error(
+                    f"manual-process: miniflux forbidden entry_id={entry_id_str} reason={e.get_error_reason()}"
+                )
+            return (
+                jsonify(
+                    {
+                        "status": "error",
+                        "message": "miniflux forbidden",
+                        "entry_id": entry_id_str,
+                    }
+                ),
+                502,
+            )
+        except miniflux.BadRequest as e:
+            if logger:
+                logger.error(
+                    f"manual-process: miniflux bad request entry_id={entry_id_str} reason={e.get_error_reason()}"
+                )
+            return (
+                jsonify(
+                    {
+                        "status": "error",
+                        "message": "miniflux bad request",
+                        "entry_id": entry_id_str,
+                    }
+                ),
+                502,
+            )
+        except miniflux.ClientError as e:
+            if logger:
+                logger.error(
+                    f"manual-process: miniflux error entry_id={entry_id_str} status_code={e.status_code} reason={e.get_error_reason()}"
+                )
+            return (
+                jsonify(
+                    {
+                        "status": "error",
+                        "message": "miniflux error",
+                        "entry_id": entry_id_str,
+                    }
+                ),
+                502,
+            )
+        except Exception as e:
+            if logger:
+                logger.error(f"manual-process: unexpected error entry_id={entry_id_str} error={e}")
+            return (
+                jsonify(
+                    {
+                        "status": "error",
+                        "message": "unexpected error",
+                        "entry_id": entry_id_str,
+                    }
+                ),
+                500,
+            )
+
+        trace_entry = dict(entries[0])
+        trace_entry["_trace_id"] = trace_id
 
         result = process_entries_batch(
             config,
-            [entries[0]],
+            [trace_entry],
             miniflux_client,
             entry_processor,
             llm_client,
@@ -149,13 +325,14 @@ def create_app(
                         "status": "error",
                         "message": "processing failed",
                         "entry_id": entry_id_str,
+                        "trace_id": trace_id,
                     }
                 ),
                 500,
             )
         if logger:
             logger.info(f"manual-process: ok entry_id={entry_id_str}")
-        return jsonify({"status": "ok", "entry_id": entry_id_str})
+        return jsonify({"status": "ok", "entry_id": entry_id_str, "trace_id": trace_id})
 
     @app.route("/miniflux-ai/user/llm-pool/clear", methods=["POST"])
     def clear_llm_pool():
@@ -261,5 +438,237 @@ def create_app(
                 base["url"] = summary.get("url")
             items.append(base)
         return jsonify({"status": "ok", "items": items})
+
+    @app.route("/miniflux-ai/user/processed-entries", methods=["GET"])
+    def processed_entries():
+        services = get_app_services(current_app)
+        entries_repository = services.entries_repository
+        
+        limit_raw = request.args.get("limit")
+        offset_raw = request.args.get("offset")
+        
+        try:
+            limit = int(limit_raw) if limit_raw is not None else 100
+        except ValueError:
+            limit = 100
+        if limit <= 0: limit = 100
+            
+        try:
+            offset = int(offset_raw) if offset_raw is not None else 0
+        except ValueError:
+            offset = 0
+        if offset < 0: offset = 0
+            
+        try:
+            all_entries = entries_repository.read_all()
+            # Sort by datetime desc
+            all_entries.sort(key=lambda x: x.get("datetime") or "", reverse=True)
+            
+            total = len(all_entries)
+            page_entries = all_entries[offset : offset + limit]
+            
+            return jsonify({
+                "status": "ok",
+                "total": total,
+                "limit": limit,
+                "offset": offset,
+                "entries": page_entries
+            })
+        except Exception as e:
+            return jsonify({"status": "error", "message": str(e)}), 500
+
+    @app.route("/miniflux-ai/user/process-trace/<entry_id>", methods=["GET"])
+    def get_process_trace(entry_id):
+        from common.logger import get_process_logger
+        import json
+        
+        # This implementation reads from the log file. 
+        # In a production system with high volume, this should be indexed in a DB.
+        # For our scale, scanning the log file is acceptable.
+        
+        target_id = str(entry_id).strip()
+        # Simple heuristic: trace_id is usually 32 hex chars. entry_id is usually digits.
+        is_trace_id = len(target_id) > 20 and not target_id.isdigit()
+
+        log_path = os.path.join("logs", "manual-process.log")
+        if not os.path.exists(log_path):
+            return jsonify({"status": "not_found", "message": "Log file not found"}), 404
+            
+        # If querying by Entry ID, we first find all associated Trace IDs
+        if not is_trace_id:
+            found_traces = {} # trace_id -> summary
+            try:
+                with open(log_path, "r", encoding="utf-8") as f:
+                    for line in f:
+                        try:
+                            record = json.loads(line)
+                            if str(record.get("entry_id")) == target_id:
+                                trace_id = record.get("trace_id")
+                                if not trace_id: continue
+                                
+                                if trace_id not in found_traces:
+                                    found_traces[trace_id] = {
+                                        "trace_id": trace_id,
+                                        "entry_id": target_id,
+                                        "start_time": record.get("timestamp"),
+                                        "status": "pending",
+                                        "stages_count": 0
+                                    }
+                                
+                                t = found_traces[trace_id]
+                                t["stages_count"] += 1
+                                
+                                if record.get("stage") == "process" and record.get("action") == "complete":
+                                    t["status"] = record.get("status")
+                                    t["total_duration_ms"] = record.get("duration_ms")
+                                    if record.get("data"):
+                                        t.update(record.get("data"))
+                        except json.JSONDecodeError:
+                            continue
+            except Exception as e:
+                 return jsonify({"status": "error", "message": str(e)}), 500
+
+            trace_list = list(found_traces.values())
+            # Sort by start_time desc
+            trace_list.sort(key=lambda x: x.get("start_time") or "", reverse=True)
+            
+            if not trace_list:
+                return jsonify({"status": "not_found", "id": target_id}), 404
+                
+            return jsonify({
+                "status": "ok",
+                "type": "list",
+                "id": target_id,
+                "traces": trace_list
+            })
+
+        # If querying by Trace ID, return detailed stages
+        stages = []
+        summary = None
+        
+        try:
+            with open(log_path, "r", encoding="utf-8") as f:
+                for line in f:
+                    try:
+                        record = json.loads(line)
+                        
+                        if str(record.get("trace_id")) == target_id:
+                            # Convert to UI format
+                            stage_data = {
+                                "timestamp": record.get("timestamp"),
+                                "stage": record.get("stage"),
+                                "action": record.get("action"),
+                                "status": record.get("status"),
+                                "duration_ms": record.get("duration_ms"),
+                                "data": record.get("data")
+                            }
+                            stages.append(stage_data)
+                            
+                            # Check for completion to build summary
+                            if record.get("stage") == "process" and record.get("action") == "complete":
+                                summary = {
+                                    "entry_id": str(record.get("entry_id")),
+                                    "trace_id": record.get("trace_id"),
+                                    "status": record.get("status"),
+                                    "total_duration_ms": record.get("duration_ms"),
+                                    "end_time": record.get("timestamp"),
+                                    # Extract data from the complete record
+                                    ** (record.get("data") or {})
+                                }
+                    except json.JSONDecodeError:
+                        continue
+        except Exception as e:
+            return jsonify({"status": "error", "message": str(e)}), 500
+            
+        if not stages:
+            return jsonify({"status": "not_found", "id": target_id}), 404
+            
+        # Fill in start time if we have summary
+        if summary and stages:
+            summary["start_time"] = stages[0]["timestamp"]
+            summary["stages_count"] = len(stages)
+            
+        # If no summary found (process incomplete or mixed logs), try to build partial summary
+        if not summary and stages:
+            last = stages[-1]
+            summary = {
+                "entry_id": str(stages[0]["data"].get("entry_id")) if stages[0].get("data") else "",
+                "status": "pending" if last["status"] != "error" else "error",
+                "start_time": stages[0]["timestamp"],
+                "stages_count": len(stages)
+            }
+
+        return jsonify({
+            "status": "ok", 
+            "type": "detail",
+            "entry_id": summary.get("entry_id"), 
+            "trace_id": target_id,
+            "summary": summary,
+            "stages": stages
+        })
+
+    @app.route("/miniflux-ai/user/process-history", methods=["GET"])
+    def get_process_history():
+        limit_raw = request.args.get("limit")
+        try:
+            limit = int(limit_raw) if limit_raw is not None else 20
+        except ValueError:
+            limit = 20
+            
+        log_path = os.path.join("logs", "manual-process.log")
+        if not os.path.exists(log_path):
+             return jsonify({"status": "ok", "total": 0, "traces": []})
+             
+        import json
+        traces = {} # Map trace_id -> trace_summary
+        
+        # Read file in reverse would be better for performance, but for now standard read
+        try:
+            with open(log_path, "r", encoding="utf-8") as f:
+                # We need to process all lines to aggregate by trace_id
+                # Optimization: In a real scenario, we might want to rotate logs or use a DB
+                for line in f:
+                    try:
+                        record = json.loads(line)
+                        trace_id = record.get("trace_id")
+                        if not trace_id: continue
+                        
+                        if trace_id not in traces:
+                            traces[trace_id] = {
+                                "trace_id": trace_id,
+                                "entry_id": str(record.get("entry_id")),
+                                "start_time": record.get("timestamp"),
+                                "status": "pending",
+                                "stages_count": 0
+                            }
+                        
+                        t = traces[trace_id]
+                        t["stages_count"] += 1
+                        
+                        # Update if this is a completion record
+                        if record.get("stage") == "process" and record.get("action") == "complete":
+                            t["status"] = record.get("status")
+                            t["total_duration_ms"] = record.get("duration_ms")
+                            if record.get("data"):
+                                t.update(record.get("data"))
+                                
+                    except json.JSONDecodeError:
+                        continue
+        except Exception as e:
+            return jsonify({"status": "error", "message": str(e)}), 500
+            
+        # Convert to list and sort by start_time desc
+        trace_list = list(traces.values())
+        trace_list.sort(key=lambda x: x.get("start_time") or "", reverse=True)
+        
+        total = len(trace_list)
+        result_traces = trace_list[:limit]
+        
+        return jsonify({
+            "status": "ok",
+            "total": total,
+            "limit": limit,
+            "traces": result_traces
+        })
 
     return app
