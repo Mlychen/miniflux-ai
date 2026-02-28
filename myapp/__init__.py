@@ -463,16 +463,66 @@ def create_app(
             all_entries = entries_repository.read_all()
             # Sort by datetime desc
             all_entries.sort(key=lambda x: x.get("datetime") or "", reverse=True)
-            
+
+            # Backfill trace_id / entry_id from process logs using canonical_id.
+            # Historical summaries may only have `id` (canonical_id), so we enrich at read time.
+            trace_index = {}
+            log_path = os.path.join("logs", "manual-process.log")
+            if os.path.exists(log_path):
+                import json
+
+                with open(log_path, "r", encoding="utf-8") as f:
+                    for line in f:
+                        try:
+                            record = json.loads(line)
+                        except json.JSONDecodeError:
+                            continue
+                        if (
+                            record.get("stage") != "process"
+                            or record.get("action") != "complete"
+                        ):
+                            continue
+                        data = record.get("data") or {}
+                        canonical_id = data.get("canonical_id")
+                        if not canonical_id:
+                            continue
+                        timestamp = record.get("timestamp") or ""
+                        prev = trace_index.get(canonical_id)
+                        if prev and prev.get("timestamp", "") > timestamp:
+                            continue
+                        trace_index[canonical_id] = {
+                            "entry_id": str(record.get("entry_id") or ""),
+                            "trace_id": str(record.get("trace_id") or ""),
+                            "timestamp": timestamp,
+                        }
+
             total = len(all_entries)
             page_entries = all_entries[offset : offset + limit]
-            
+            normalized_entries = []
+            for item in page_entries:
+                row = dict(item)
+                canonical_id = str(row.get("canonical_id") or row.get("id") or "")
+                trace_info = trace_index.get(canonical_id, {})
+                entry_id = str(
+                    row.get("entry_id")
+                    or row.get("source_entry_id")
+                    or trace_info.get("entry_id")
+                    or ""
+                )
+                trace_id = str(row.get("trace_id") or trace_info.get("trace_id") or "")
+                row["canonical_id"] = canonical_id
+                # Keep API contract: `id` is what UI shows as Entry ID.
+                row["id"] = entry_id
+                row["entry_id"] = entry_id
+                row["trace_id"] = trace_id
+                normalized_entries.append(row)
+
             return jsonify({
                 "status": "ok",
                 "total": total,
                 "limit": limit,
                 "offset": offset,
-                "entries": page_entries
+                "entries": normalized_entries
             })
         except Exception as e:
             return jsonify({"status": "error", "message": str(e)}), 500

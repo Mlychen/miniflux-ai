@@ -398,31 +398,52 @@ def process_entry(
         
         if filter_entry(config, agent, entry):
             _trace_log(trace_id, entry_id, "agent_process", "start", data={"agent": agent_name})
-            
-            agent_prompt = agent[1]["prompt"]
-            agent_input = entry["content"]
-            _trace_log(trace_id, entry_id, "agent_process", "llm_call_start", data={
-                "agent": agent_name,
-                "prompt_template": agent_prompt,
-                "input_text": agent_input
-            })
 
-            try:
-                response_content = _call_llm_with_entry_options(
-                    llm_client,
-                    agent_prompt,
-                    agent_input,
-                    logger,
-                    entry_key=f"{canonical_id}:{agent_name}",
-                    expected_retries=request_expected_retries,
-                    ttl_seconds=request_ttl_seconds,
+            if agent_name == "summary":
+                if not summary_text:
+                    _trace_log(
+                        trace_id,
+                        entry_id,
+                        "agent_process",
+                        "skipped",
+                        status="skipped",
+                        data={"agent": agent_name, "reason": "preprocess_summary_missing"},
+                    )
+                    continue
+                response_content = summary_text
+                _trace_log(
+                    trace_id,
+                    entry_id,
+                    "agent_process",
+                    "llm_call_skipped",
+                    status="success",
+                    data={"agent": agent_name, "reason": "use_preprocess_summary"},
                 )
-            except Exception as e:
-                logger.error(
-                    f"Error processing entry {entry['id']} with agent {agent_name}: {e}"
-                )
-                _trace_log(trace_id, entry_id, "agent_process", "error", status="error", duration_ms=int((time.time() - agent_start) * 1000), data={"agent": agent_name, "error": str(e)})
-                continue
+            else:
+                agent_prompt = agent[1]["prompt"]
+                agent_input = entry["content"]
+                _trace_log(trace_id, entry_id, "agent_process", "llm_call_start", data={
+                    "agent": agent_name,
+                    "prompt_template": agent_prompt,
+                    "input_text": agent_input
+                })
+
+                try:
+                    response_content = _call_llm_with_entry_options(
+                        llm_client,
+                        agent_prompt,
+                        agent_input,
+                        logger,
+                        entry_key=f"{canonical_id}:{agent_name}",
+                        expected_retries=request_expected_retries,
+                        ttl_seconds=request_ttl_seconds,
+                    )
+                except Exception as e:
+                    logger.error(
+                        f"Error processing entry {entry['id']} with agent {agent_name}: {e}"
+                    )
+                    _trace_log(trace_id, entry_id, "agent_process", "error", status="error", duration_ms=int((time.time() - agent_start) * 1000), data={"agent": agent_name, "error": str(e)})
+                    continue
             
             agent_duration = int((time.time() - agent_start) * 1000)
             log_content = (
@@ -475,8 +496,31 @@ def process_entry(
         new_content = llm_result + entry["content"]
         if dedup_marker:
             new_content = new_content + "\n" + dedup_marker
-        miniflux_client.update_entry(entry["id"], content=new_content)
-        _trace_log(trace_id, entry_id, "update_miniflux", "complete", status="success", duration_ms=int((time.time() - update_start) * 1000), data={"content_length": len(new_content)})
+        try:
+            miniflux_client.update_entry(entry["id"], content=new_content)
+        except Exception as e:
+            _trace_log(
+                trace_id,
+                entry_id,
+                "update_miniflux",
+                "error",
+                status="error",
+                duration_ms=int((time.time() - update_start) * 1000),
+                data={"error": str(e)},
+            )
+            raise
+        _trace_log(
+            trace_id,
+            entry_id,
+            "update_miniflux",
+            "complete",
+            status="success",
+            duration_ms=int((time.time() - update_start) * 1000),
+            data={
+                "content_length": len(new_content),
+                "summary_length": len(summary_text or ""),
+            },
+        )
 
         if logger and hasattr(logger, "debug"):
             logger.debug(

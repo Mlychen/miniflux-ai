@@ -913,6 +913,7 @@
                   <tr>
                     <th>ID</th>
                     <th>Canonical ID</th>
+                    <th>Trace ID</th>
                     <th>标题</th>
                     <th>类别</th>
                     <th>发布时间</th>
@@ -921,7 +922,7 @@
                 </thead>
                 <tbody id="processedBody">
                   <tr>
-                    <td colspan="6" class="empty-state">
+                    <td colspan="7" class="empty-state">
                       <div class="empty-state-icon">📭</div>
                       <div class="empty-state-text">点击"加载"按钮查看已处理条目</div>
                     </td>
@@ -1339,7 +1340,7 @@
           if (!entries || entries.length === 0) {
             processedBody.innerHTML = `
               <tr>
-                <td colspan="6" class="empty-state">
+                <td colspan="7" class="empty-state">
                   <div class="empty-state-icon">📭</div>
                   <div class="empty-state-text">暂无已处理条目</div>
                 </td>
@@ -1364,6 +1365,14 @@
             tdCanonical.style.fontSize = '12px';
             tdCanonical.textContent = it.canonical_id || '-';
             tr.appendChild(tdCanonical);
+
+            // Trace ID
+            const tdTrace = document.createElement('td');
+            tdTrace.className = 'mono';
+            tdTrace.style.fontSize = '11px';
+            tdTrace.textContent = it.trace_id || '-';
+            tdTrace.title = it.trace_id || '';
+            tr.appendChild(tdTrace);
 
             // Title
             const tdTitle = document.createElement('td');

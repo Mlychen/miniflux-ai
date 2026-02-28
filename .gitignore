@@ -171,3 +171,5 @@ cython_debug/
 /.claude/
 /.trae/
 /.gitattributes
+*.bak
+run_profiling.ps1
