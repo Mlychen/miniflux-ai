@@ -167,3 +167,7 @@ cython_debug/
 /ai_news.json
 /runtime/
 /EnhanceFeaturePlan/
+/tests/*
+/.claude/
+/.trae/
+/.gitattributes
