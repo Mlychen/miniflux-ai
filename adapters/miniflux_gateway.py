@@ -8,6 +8,9 @@ class MinifluxGateway:
     def me(self):
         return self._client.me()
 
+    def get_entry(self, entry_id: int):
+        return self._client.get_entry(entry_id)
+
     def get_entries(self, **kwargs):
         return self._client.get_entries(**kwargs)
 

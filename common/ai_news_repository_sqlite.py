@@ -1,7 +1,5 @@
-# common/ai_news_repository_sqlite.py
 """SQLite-based AI news repository with WAL mode support."""
 
-import sqlite3
 import time
 from typing import Optional
 import threading

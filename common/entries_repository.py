@@ -17,3 +17,14 @@ class EntriesRepository:
 
     def clear_all(self):
         write_json_file(self.path, [], lock=self.lock)
+
+    def contains(self, canonical_id: str) -> bool:
+        """Check if a canonical_id has already been processed."""
+        processed = read_json_file(self.path.replace('.json', '_processed.json'), default_factory=list, lock=self.lock)
+        return canonical_id in processed
+
+    def add(self, canonical_id: str):
+        """Mark a canonical_id as processed."""
+        processed = read_json_file(self.path.replace('.json', '_processed.json'), default_factory=list, lock=self.lock)
+        if canonical_id not in processed:
+            append_json_list_item(self.path.replace('.json', '_processed.json'), canonical_id, lock=self.lock)

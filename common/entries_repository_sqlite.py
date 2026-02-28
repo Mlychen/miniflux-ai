@@ -34,12 +34,27 @@ class EntriesRepositorySQLite:
         )
     """
 
+    CREATE_PROCESSED_TABLE_SQL = """
+        CREATE TABLE IF NOT EXISTS processed_entries (
+            canonical_id TEXT PRIMARY KEY,
+            processed_at TEXT DEFAULT CURRENT_TIMESTAMP
+        )
+    """
+
     INSERT_SQL = """
         INSERT OR REPLACE INTO entries (
             id, datetime, category, title, content, url,
             ai_category, ai_subject, ai_subject_type,
             ai_region, ai_event_type, ai_group_hint, ai_confidence
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    """
+
+    INSERT_PROCESSED_SQL = """
+        INSERT OR IGNORE INTO processed_entries (canonical_id) VALUES (?)
+    """
+
+    SELECT_PROCESSED_SQL = """
+        SELECT 1 FROM processed_entries WHERE canonical_id = ?
     """
 
     def __init__(self, path: str, lock: Optional[threading.Lock] = None):
@@ -50,6 +65,7 @@ class EntriesRepositorySQLite:
         """Initialize database schema."""
         with self.db.connection() as conn:
             conn.execute(self.CREATE_TABLE_SQL)
+            conn.execute(self.CREATE_PROCESSED_TABLE_SQL)
             conn.commit()
 
     def _derive_id(self, item: Dict[str, Any]) -> str:
@@ -106,4 +122,16 @@ class EntriesRepositorySQLite:
         """Delete all entries from the table."""
         with self.db.connection() as conn:
             conn.execute("DELETE FROM entries")
+            conn.commit()
+
+    def contains(self, canonical_id: str) -> bool:
+        """Check if a canonical_id has already been processed."""
+        with self.db.connection() as conn:
+            cursor = conn.execute(self.SELECT_PROCESSED_SQL, (canonical_id,))
+            return cursor.fetchone() is not None
+
+    def add(self, canonical_id: str):
+        """Mark a canonical_id as processed."""
+        with self.db.connection() as conn:
+            conn.execute(self.INSERT_PROCESSED_SQL, (canonical_id,))
             conn.commit()

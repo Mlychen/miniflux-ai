@@ -1,15 +1,21 @@
 import hashlib
+import inspect
 import json
 import re
 import threading
+import time
+import uuid
 from typing import Protocol
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from ratelimit import limits, sleep_and_retry
 
-from common.entries_repository import EntriesRepository
 from core.entry_rendering import build_summary_entry, render_agent_response
 from core.entry_filter import filter_entry
+from common.logger import get_process_logger
+
+# Initialize process logger
+trace_logger = get_process_logger()
 
 
 class ProcessedNewsIds(Protocol):
@@ -115,17 +121,103 @@ def _parse_preprocess_output(raw):
     return parsed if isinstance(parsed, dict) else None
 
 
-def preprocess_entry(entry, config, llm_client, logger):
+def _call_llm_with_entry_options(
+    llm_client,
+    prompt,
+    request,
+    logger,
+    entry_key=None,
+    expected_retries=None,
+    ttl_seconds=None,
+):
+    get_result = getattr(llm_client, "get_result")
+    try:
+        sig = inspect.signature(get_result)
+    except (TypeError, ValueError):
+        sig = None
+
+    supports_kwargs = bool(
+        sig
+        and any(
+            param.kind == inspect.Parameter.VAR_KEYWORD
+            for param in sig.parameters.values()
+        )
+    )
+    supports_named = bool(
+        sig
+        and "entry_key" in sig.parameters
+        and "expected_retries" in sig.parameters
+        and "ttl_seconds" in sig.parameters
+    )
+
+    if supports_kwargs or supports_named:
+        return get_result(
+            prompt,
+            request,
+            logger,
+            entry_key=entry_key,
+            expected_retries=expected_retries,
+            ttl_seconds=ttl_seconds,
+        )
+    return get_result(prompt, request, logger)
+
+
+def _trace_log(trace_id, entry_id, stage, action, status="pending", duration_ms=None, data=None):
+    """Helper to log trace events."""
+    extra = {
+        "trace_id": trace_id,
+        "entry_id": entry_id,
+        "stage": stage,
+        "action": action,
+        "status": status,
+        "duration_ms": duration_ms,
+        "data": data,
+    }
+    trace_logger.info(f"Trace: {stage}.{action}", extra=extra)
+
+
+def preprocess_entry(
+    entry,
+    config,
+    llm_client,
+    logger,
+    trace_id=None,
+    entry_id=None,
+    entry_key=None,
+    expected_retries=None,
+    ttl_seconds=None,
+):
     if not _should_preprocess_entry(config, entry):
         return None
     prompt = getattr(config, "preprocess_prompt", None) or DEFAULT_PREPROCESS_PROMPT
-    request = _build_preprocess_input(entry)
+    request_content = _build_preprocess_input(entry)
+    
+    if trace_id and entry_id:
+        _trace_log(trace_id, entry_id, "preprocess", "llm_call_start", data={
+            "prompt_template": prompt,
+            "input_text": request_content
+        })
+
     try:
-        raw = llm_client.get_result(prompt, request, logger)
+        raw = _call_llm_with_entry_options(
+            llm_client,
+            prompt,
+            request_content,
+            logger,
+            entry_key=entry_key,
+            expected_retries=expected_retries,
+            ttl_seconds=ttl_seconds,
+        )
     except Exception as e:
         if logger:
             logger.error(f"Error preprocessing entry {entry.get('id')}: {e}")
+        if trace_id and entry_id:
+            _trace_log(trace_id, entry_id, "preprocess", "llm_call_error", status="error", data={"error": str(e)})
         return None
+
+    if trace_id and entry_id:
+        _trace_log(trace_id, entry_id, "preprocess", "llm_call_complete", data={"raw_response": raw})
+
     parsed = _parse_preprocess_output(raw)
     if parsed is None and logger:
         logger.error(f"Error preprocessing entry {entry.get('id')}: invalid_json")
@@ -143,28 +235,148 @@ def process_entry(
 ):
     dedup_marker = config.miniflux_dedup_marker
     entry_id = str(entry["id"])
+    canonical_id = make_canonical_id(entry.get("url"), entry.get("title"))
+    request_expected_retries = max(
+        0, int(getattr(config, "llm_request_expected_retries", 2))
+    )
+    request_ttl_seconds = float(getattr(config, "llm_request_ttl_seconds", 600))
+    trace_id = entry.get("_trace_id") or uuid.uuid4().hex
+    start_time = time.time()
+    marked_processed = False
+
+    def _mark_processed(reason):
+        nonlocal marked_processed
+        if processed_entries_repository is None:
+            _trace_log(trace_id, entry_id, "dedup", "mark_processed_skipped", status="warning", data={"reason": "repo_none"})
+            return
+        if marked_processed:
+            return
+        try:
+            processed_entries_repository.add(canonical_id)
+            marked_processed = True
+            _trace_log(
+                trace_id,
+                entry_id,
+                "dedup",
+                "mark_processed",
+                status="success",
+                data={"canonical_id": canonical_id, "reason": reason},
+            )
+        except Exception as e:
+            if logger:
+                logger.error(f"Failed to mark processed entry {entry_id}: {e}")
+            _trace_log(
+                trace_id,
+                entry_id,
+                "dedup",
+                "mark_processed",
+                status="error",
+                data={"canonical_id": canonical_id, "reason": reason, "error": str(e)},
+            )
+
+    _trace_log(trace_id, entry_id, "process", "start", status="processing")
+    _trace_log(
+        trace_id,
+        entry_id,
+        "canonical_id",
+        "generated",
+        status="success",
+        data={"canonical_id": canonical_id, "processed_repo_exists": processed_entries_repository is not None},
+    )
 
     if logger and hasattr(logger, "debug"):
-        logger.debug(f"process_entry: start entry_id={entry_id}")
+        logger.debug(f"process_entry: start entry_id={entry_id} processed_repo={processed_entries_repository is not None}")
 
     if dedup_marker and dedup_marker in (entry.get("content") or ""):
         logger.info(
             f"Skipping entry {entry_id} - already processed (dedup marker found)"
         )
+        _trace_log(trace_id, entry_id, "dedup", "check", status="skipped", data={"reason": "dedup_marker_found"})
+        _trace_log(trace_id, entry_id, "process", "complete", status="skipped", duration_ms=int((time.time() - start_time) * 1000))
         return
 
     if processed_entries_repository is not None:
-        if processed_entries_repository.contains(entry_id):
+        if processed_entries_repository.contains(canonical_id):
             logger.info(
                 f"Skipping entry {entry_id} - already processed (in processed records)"
             )
+            _trace_log(
+                trace_id,
+                entry_id,
+                "dedup",
+                "check",
+                status="skipped",
+                data={"reason": "processed_repository_found", "canonical_id": canonical_id},
+            )
+            _trace_log(trace_id, entry_id, "process", "complete", status="skipped", duration_ms=int((time.time() - start_time) * 1000))
             return
 
-    preprocess_result = preprocess_entry(entry, config, llm_client, logger)
+    agents_items = list(config.agents.items())
+    if not agents_items:
+        _trace_log(
+            trace_id,
+            entry_id,
+            "agent_process",
+            "skipped_all",
+            status="skipped",
+            data={"reason": "no_agents_configured"},
+        )
+        _trace_log(
+            trace_id,
+            entry_id,
+            "process",
+            "complete",
+            status="skipped",
+            duration_ms=int((time.time() - start_time) * 1000),
+            data={"canonical_id": canonical_id, "agents_processed": 0, "agent_details": []},
+        )
+        _mark_processed("no_agents_configured")
+        return
+
+    if not any(filter_entry(config, agent, entry) for agent in agents_items):
+        _trace_log(
+            trace_id,
+            entry_id,
+            "agent_process",
+            "skipped_all",
+            status="skipped",
+            data={"reason": "all_agents_filtered"},
+        )
+        _trace_log(
+            trace_id,
+            entry_id,
+            "process",
+            "complete",
+            status="skipped",
+            duration_ms=int((time.time() - start_time) * 1000),
+            data={"canonical_id": canonical_id, "agents_processed": 0, "agent_details": []},
+        )
+        _mark_processed("all_agents_filtered")
+        return
+
+    preprocess_start = time.time()
+    _trace_log(trace_id, entry_id, "preprocess", "start")
+    preprocess_result = preprocess_entry(
+        entry,
+        config,
+        llm_client,
+        logger,
+        trace_id=trace_id,
+        entry_id=entry_id,
+        entry_key=f"{canonical_id}:preprocess",
+        expected_retries=request_expected_retries,
+        ttl_seconds=request_ttl_seconds,
+    )
+    preprocess_duration = int((time.time() - preprocess_start) * 1000)
+    
     summary_text = None
+    ai_category = None
     if preprocess_result:
         summary_text = preprocess_result.get("summary")
-    canonical_id = make_canonical_id(entry.get("url"), entry.get("title"))
+        ai_category = preprocess_result.get("ai_category")
+        _trace_log(trace_id, entry_id, "preprocess", "complete", status="success", duration_ms=preprocess_duration, data=preprocess_result)
+    else:
+        _trace_log(trace_id, entry_id, "preprocess", "complete", status="warning", duration_ms=preprocess_duration, data={"error": "no_result"})
 
     if logger and hasattr(logger, "debug"):
         logger.debug(
@@ -172,36 +384,71 @@ def process_entry(
         )
 
     llm_result = ""
-    active_entries_repository = entries_repository or EntriesRepository(
-        path="entries.json"
-    )
+    if entries_repository is None:
+        _trace_log(trace_id, entry_id, "process", "error", status="error", data={"error": "entries_repository_missing"})
+        raise RuntimeError("entries_repository must be provided")
+    active_entries_repository = entries_repository
+
+    agents_processed = 0
+    agent_details = []
 
     for agent in config.agents.items():
+        agent_start = time.time()
+        agent_name = agent[0]
+        
         if filter_entry(config, agent, entry):
+            _trace_log(trace_id, entry_id, "agent_process", "start", data={"agent": agent_name})
+            
+            agent_prompt = agent[1]["prompt"]
+            agent_input = entry["content"]
+            _trace_log(trace_id, entry_id, "agent_process", "llm_call_start", data={
+                "agent": agent_name,
+                "prompt_template": agent_prompt,
+                "input_text": agent_input
+            })
+
             try:
-                response_content = llm_client.get_result(
-                    agent[1]["prompt"],
-                    entry["content"],
+                response_content = _call_llm_with_entry_options(
+                    llm_client,
+                    agent_prompt,
+                    agent_input,
                     logger,
+                    entry_key=f"{canonical_id}:{agent_name}",
+                    expected_retries=request_expected_retries,
+                    ttl_seconds=request_ttl_seconds,
                 )
             except Exception as e:
                 logger.error(
-                    f"Error processing entry {entry['id']} with agent {agent[0]}: {e}"
+                    f"Error processing entry {entry['id']} with agent {agent_name}: {e}"
                 )
+                _trace_log(trace_id, entry_id, "agent_process", "error", status="error", duration_ms=int((time.time() - agent_start) * 1000), data={"agent": agent_name, "error": str(e)})
                 continue
+            
+            agent_duration = int((time.time() - agent_start) * 1000)
             log_content = (
                 (response_content or "")[:20] + "..."
                 if len(response_content or "") > 20
                 else response_content
             )
-            logger.info(f"agents:{agent[0]} feed_id:{entry['id']} result:{log_content}")
+            logger.info(f"agents:{agent_name} feed_id:{entry['id']} result:{log_content}")
 
             if logger and hasattr(logger, "debug"):
                 logger.debug(
-                    f"process_entry: agent={agent[0]} entry_id={entry_id} response_length={len(response_content or '')}"
+                    f"process_entry: agent={agent_name} entry_id={entry_id} response_length={len(response_content or '')}"
                 )
+            
+            _trace_log(trace_id, entry_id, "agent_process", "complete", status="success", duration_ms=agent_duration, data={
+                "agent": agent_name, 
+                "response_length": len(response_content or ""),
+                "raw_response": response_content
+            })
+            
+            agents_processed += 1
+            agent_details.append(agent_name)
 
-            if agent[0] == "summary":
+            if agent_name == "summary":
+                save_start = time.time()
+                _trace_log(trace_id, entry_id, "save_result", "start")
                 entry_list = build_summary_entry(entry, summary_text or response_content)
                 entry_list.update(
                     {
@@ -216,22 +463,32 @@ def process_entry(
                     }
                 )
                 active_entries_repository.append_summary_item(entry_list)
+                _trace_log(trace_id, entry_id, "save_result", "complete", status="success", duration_ms=int((time.time() - save_start) * 1000), data={"canonical_id": canonical_id})
 
             llm_result = llm_result + render_agent_response(agent[1], response_content)
+        else:
+             _trace_log(trace_id, entry_id, "agent_process", "skipped", status="skipped", data={"agent": agent_name, "reason": "filter_mismatch"})
 
     if len(llm_result) > 0:
+        update_start = time.time()
+        _trace_log(trace_id, entry_id, "update_miniflux", "start")
         new_content = llm_result + entry["content"]
         if dedup_marker:
             new_content = new_content + "\n" + dedup_marker
         miniflux_client.update_entry(entry["id"], content=new_content)
+        _trace_log(trace_id, entry_id, "update_miniflux", "complete", status="success", duration_ms=int((time.time() - update_start) * 1000), data={"content_length": len(new_content)})
 
         if logger and hasattr(logger, "debug"):
             logger.debug(
                 f"process_entry: updated entry {entry_id} with dedup_marker={bool(dedup_marker)}"
             )
 
-        if processed_entries_repository is not None:
-            processed_entries_repository.add(entry_id)
+        _mark_processed("updated_miniflux")
+             
+    if not marked_processed:
+        _mark_processed("flow_completed")
+
+    _trace_log(trace_id, entry_id, "process", "complete", status="success", duration_ms=int((time.time() - start_time) * 1000), data={"canonical_id": canonical_id, "agents_processed": agents_processed, "agent_details": agent_details, "ai_category": ai_category})
 
 
 def build_rate_limited_processor(

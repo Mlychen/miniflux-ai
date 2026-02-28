@@ -8,6 +8,10 @@ def filter_entry(config, agent, entry):
     # Todo Compatible with whitelist/blacklist parameter, to be removed
     allow_list = agent[1].get('allow_list') if agent[1].get('allow_list') is not None else agent[1].get('whitelist')
     deny_list = agent[1]['deny_list'] if agent[1].get('deny_list') is not None else agent[1].get('blacklist')
+    if isinstance(allow_list, list) and len(allow_list) == 0:
+        allow_list = None
+    if isinstance(deny_list, list) and len(deny_list) == 0:
+        deny_list = None
 
     # filter, if not content starts with start flag
     if not entry['content'].startswith(tuple(start_with_list)):

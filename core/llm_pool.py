@@ -136,6 +136,12 @@ class LLMRequestPool:
         with self._states_lock:
             state = self._states.get(entry_key)
             attempts = state.attempts_used if state is not None else 0
+            if (
+                state is not None
+                and state.max_attempts > 0
+                and state.attempts_used >= state.max_attempts
+            ):
+                state.status = "failed"
             status = state.status if state is not None else "unknown"
         log = ensure_logger(logger)
         log.error(
@@ -155,38 +161,49 @@ class LLMRequestPool:
         ttl_seconds: Optional[float] = None,
     ) -> Tuple[Optional[str], Optional[object]]:
         log = ensure_logger(logger)
-        if (
-            entry_key is not None
-            and expected_retries is not None
-            and ttl_seconds is not None
-        ):
-            reason = self._before_entry(
-                entry_key, expected_retries, ttl_seconds, log
-            )
-            if reason is not None:
-                with self._metrics_lock:
-                    self._total_rejected += 1
-                return None, reason
-        self._semaphore.acquire()
-        try:
-            self._acquire_rate_slot()
+        retries = max(0, int(expected_retries or 0))
+        attempt = 0
+        while True:
+            if (
+                entry_key is not None
+                and expected_retries is not None
+                and ttl_seconds is not None
+            ):
+                reason = self._before_entry(
+                    entry_key, retries, ttl_seconds, log
+                )
+                if reason is not None:
+                    with self._metrics_lock:
+                        self._total_rejected += 1
+                    return None, reason
+            self._semaphore.acquire()
             try:
-                start = time.time()
-                result = self._llm_gateway.get_result(prompt, request, log)
-                duration_ms = int((time.time() - start) * 1000)
-                with self._metrics_lock:
-                    self._total_calls += 1
-                log.debug(f"LLMRequestPool: call_success duration_ms={duration_ms}")
-                return result, None
-            except Exception as e:
-                with self._metrics_lock:
-                    self._total_calls += 1
-                    self._total_errors += 1
-                if entry_key is not None:
-                    self._on_failure(entry_key, log, e)
-                return None, e
-        finally:
-            self._semaphore.release()
+                self._acquire_rate_slot()
+                try:
+                    start = time.time()
+                    result = self._llm_gateway.get_result(prompt, request, log)
+                    duration_ms = int((time.time() - start) * 1000)
+                    with self._metrics_lock:
+                        self._total_calls += 1
+                    log.debug(
+                        f"LLMRequestPool: call_success attempt={attempt + 1} duration_ms={duration_ms}"
+                    )
+                    return result, None
+                except Exception as e:
+                    with self._metrics_lock:
+                        self._total_calls += 1
+                        self._total_errors += 1
+                    if entry_key is not None:
+                        self._on_failure(entry_key, log, e)
+                    if attempt >= retries:
+                        return None, e
+                    attempt += 1
+                    log.warning(
+                        "LLMRequestPool: retrying "
+                        f"entry_key={entry_key or 'n/a'} next_attempt={attempt + 1}/{retries + 1}"
+                    )
+            finally:
+                self._semaphore.release()
 
     def get_result(
         self,

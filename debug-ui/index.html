@@ -346,12 +346,21 @@
         overflow: hidden;
         max-height: 400px;
         overflow-y: auto;
+        overflow-x: auto;
       }
 
       table {
         width: 100%;
+        min-width: 800px; /* 确保在窄屏下也能触发滚动 */
         border-collapse: collapse;
         font-size: 13px;
+      }
+
+      /* ... existing styles ... */
+
+      .mono {
+        font-family: var(--font-mono);
+        white-space: nowrap; /* ID 不换行 */
       }
 
       thead {
@@ -725,11 +734,31 @@
           </div>
           <div class="card-body">
             <div class="input-group">
-              <label class="input-label" for="traceEntryId">Entry ID</label>
-              <input class="input" id="traceEntryId" type="text" inputmode="numeric" placeholder="例如 123" />
+              <label class="input-label" for="traceEntryId">Trace ID / Entry ID</label>
+              <input class="input" id="traceEntryId" type="text" placeholder="UUID hex 或 Entry ID" style="min-width: 250px;" />
               <button class="btn btn-primary" id="btnTrace">查询</button>
               <button class="btn" id="btnClearTrace">清空</button>
             </div>
+            <!-- 追踪列表 -->
+            <div id="traceList" style="display: none; margin-top: var(--space-md);">
+               <div style="font-size: 13px; color: var(--text-secondary); margin-bottom: var(--space-sm);">
+                 找到多个处理记录，请选择查看：
+               </div>
+               <div class="table-container" style="margin-top: 0; max-height: 200px;">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Trace ID</th>
+                        <th>状态</th>
+                        <th>时间</th>
+                        <th>操作</th>
+                      </tr>
+                    </thead>
+                    <tbody id="traceListBody"></tbody>
+                  </table>
+               </div>
+            </div>
+
             <!-- 追踪摘要 -->
             <div id="traceSummary" style="display: none; margin-top: var(--space-md);">
               <div class="stats-row">
@@ -1042,6 +1071,14 @@
           });
         }
 
+        function generateTraceId() {
+          // Generate a random 32-char hex string (UUID v4 hex)
+          return 'xxxxxxxxxxxx4xxxyxxxxxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+            var r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
+            return v.toString(16);
+          });
+        }
+
         // ========== 手动处理 ==========
         const btnManual = document.getElementById('btnManual');
         const outManual = document.getElementById('outManual');
@@ -1054,11 +1091,26 @@
             outManual.textContent = '请输入 entry_id';
             return;
           }
+          
+          const traceId = generateTraceId();
+          
           btnManual.disabled = true;
           btnManual.innerHTML = '<div class="spinner"></div> 处理中...';
-          request('POST', '/miniflux-ai/manual-process', { entry_id: v })
+          
+          // 立即更新追踪 ID 输入框，方便用户查看
+          traceEntryId.value = traceId;
+          outTrace.textContent = '等待处理日志...';
+          traceSummary.style.display = 'none';
+          traceTimeline.style.display = 'none';
+          traceList.style.display = 'none';
+          
+          request('POST', '/miniflux-ai/manual-process', { entry_id: v, trace_id: traceId })
             .then(function (data) {
               outManual.textContent = pretty(data);
+              // 自动触发一次查询
+              if (data.status === 'ok') {
+                  loadProcessTrace();
+              }
             })
             .catch(function (e) {
               outManual.textContent = pretty({ error: e.message, response: e.response || null });
@@ -1402,6 +1454,8 @@
         const traceEntryId = document.getElementById('traceEntryId');
         const traceSummary = document.getElementById('traceSummary');
         const traceTimeline = document.getElementById('traceTimeline');
+        const traceList = document.getElementById('traceList');
+        const traceListBody = document.getElementById('traceListBody');
         const traceStatus = document.getElementById('traceStatus');
         const traceDuration = document.getElementById('traceDuration');
         const traceStagesCount = document.getElementById('traceStagesCount');
@@ -1491,6 +1545,23 @@
               if (details.length > 0) {
                 detailsHtml = '<div class="timeline-detail-row" style="margin-top:var(--space-xs);">' + details.join('') + '</div>';
               }
+              
+              // LLM 详情展开
+              if (data.prompt_template || data.input_text || data.raw_response) {
+                  const expandId = 'expand-' + Math.random().toString(36).substr(2, 9);
+                  detailsHtml += `
+                    <div style="margin-top: var(--space-sm);">
+                      <button class="btn" style="padding: 2px 8px; font-size: 11px;" onclick="document.getElementById('${expandId}').style.display = document.getElementById('${expandId}').style.display === 'none' ? 'block' : 'none'">
+                        查看原始请求/回应
+                      </button>
+                      <div id="${expandId}" style="display: none; margin-top: var(--space-sm); background: var(--bg-primary); padding: var(--space-sm); border-radius: var(--radius-sm); border: 1px solid var(--border-secondary);">
+                        ${data.prompt_template ? `<div style="margin-bottom:8px;"><div style="color:var(--text-muted);font-size:10px;">PROMPT TEMPLATE</div><pre style="margin:4px 0;font-size:11px;white-space:pre-wrap;color:var(--code-text);">${data.prompt_template.replace(/</g, '&lt;')}</pre></div>` : ''}
+                        ${data.input_text ? `<div style="margin-bottom:8px;"><div style="color:var(--text-muted);font-size:10px;">INPUT TEXT</div><pre style="margin:4px 0;font-size:11px;white-space:pre-wrap;color:var(--code-text);">${data.input_text.replace(/</g, '&lt;')}</pre></div>` : ''}
+                        ${data.raw_response ? `<div><div style="color:var(--text-muted);font-size:10px;">RAW RESPONSE</div><pre style="margin:4px 0;font-size:11px;white-space:pre-wrap;color:var(--success-text);">${(typeof data.raw_response === 'string' ? data.raw_response : JSON.stringify(data.raw_response, null, 2)).replace(/</g, '&lt;')}</pre></div>` : ''}
+                      </div>
+                    </div>
+                  `;
+              }
             }
 
             div.innerHTML = `
@@ -1516,9 +1587,10 @@
           outTrace.textContent = '';
           traceSummary.style.display = 'none';
           traceTimeline.style.display = 'none';
+          traceList.style.display = 'none';
 
           if (!entryId) {
-            outTrace.textContent = '请输入 entry_id';
+            outTrace.textContent = '请输入 Trace ID 或 Entry ID';
             return;
           }
 
@@ -1528,8 +1600,29 @@
           request('GET', `/miniflux-ai/user/process-trace/${encodeURIComponent(entryId)}`)
             .then(function (data) {
               if (data.status === 'not_found') {
-                outTrace.textContent = '未找到该 entry_id 的处理记录';
+                outTrace.textContent = '未找到该 ID 的处理记录: ' + entryId;
                 return;
+              }
+              
+              if (data.type === 'list') {
+                  traceListBody.innerHTML = '';
+                  (data.traces || []).forEach(t => {
+                      const tr = document.createElement('tr');
+                      tr.innerHTML = `
+                        <td class="mono" style="font-size:11px;">${t.trace_id}</td>
+                        <td><span class="badge ${getStatusBadgeClass(t.status)}">${t.status}</span></td>
+                        <td>${formatTime(t.start_time)}</td>
+                        <td><button class="btn" style="padding: 2px 8px; font-size: 11px;">查看</button></td>
+                      `;
+                      tr.querySelector('button').onclick = () => {
+                          traceEntryId.value = t.trace_id;
+                          loadProcessTrace();
+                      };
+                      traceListBody.appendChild(tr);
+                  });
+                  traceList.style.display = 'block';
+                  outTrace.textContent = `找到 ${data.traces.length} 条处理记录，请选择一条查看详情。`;
+                  return;
               }
 
               outTrace.textContent = pretty({
@@ -1572,6 +1665,7 @@
           outTrace.textContent = '';
           traceSummary.style.display = 'none';
           traceTimeline.style.display = 'none';
+          traceList.style.display = 'none';
         });
 
         // ========== 处理历史 ==========
@@ -1611,8 +1705,9 @@
             // Trace ID
             const tdTraceId = document.createElement('td');
             tdTraceId.className = 'mono';
-            tdTraceId.style.fontSize = '10px';
-            tdTraceId.textContent = (trace.trace_id || '').substring(0, 8) + '...';
+            tdTraceId.style.fontSize = '11px';
+            tdTraceId.textContent = trace.trace_id || '-';
+            tdTraceId.title = trace.trace_id || '';
             tr.appendChild(tdTraceId);
 
             // Status
@@ -1636,7 +1731,8 @@
             const tdCanonical = document.createElement('td');
             tdCanonical.className = 'mono';
             tdCanonical.style.fontSize = '11px';
-            tdCanonical.textContent = (trace.canonical_id || '').substring(0, 16) + '...' || '-';
+            tdCanonical.textContent = trace.canonical_id || '-';
+            tdCanonical.title = trace.canonical_id || '';
             tr.appendChild(tdCanonical);
 
             // Category

@@ -36,7 +36,7 @@ def process_entries_batch(
                 future.result()
             except Exception as e:
                 failures += 1
-                logger.error(traceback.format_exc())
-                logger.error('generated an exception: %s' % e)
+                if logger:
+                    logger.error(f"process_entries_batch: generated an exception: {e}", exc_info=True)
 
     return {'total': len(entries), 'failures': failures}

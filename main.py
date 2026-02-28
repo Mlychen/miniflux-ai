@@ -1,5 +1,7 @@
 import concurrent.futures
 from dataclasses import dataclass
+import json
+import os
 import threading
 import time
 import traceback
@@ -156,6 +158,98 @@ def my_schedule(services, entry_mode):
             time.sleep(30)
 
 
+def migrate_json_to_sqlite_if_needed(config, entries_repository, ai_news_repository, logger):
+    try:
+        from common.entries_repository_sqlite import EntriesRepositorySQLite
+        from common.ai_news_repository_sqlite import AiNewsRepositorySQLite
+    except Exception:
+        return
+
+    if not isinstance(entries_repository, EntriesRepositorySQLite):
+        return
+
+    try:
+        existing_entries = entries_repository.read_all()
+        has_sqlite_entries = bool(existing_entries)
+    except Exception:
+        has_sqlite_entries = False
+
+    has_ai_news = False
+    try:
+        with ai_news_repository.db.connection() as conn:
+            row = conn.execute("SELECT COUNT(*) FROM ai_news").fetchone()
+            has_ai_news = bool(row and row[0] > 0)
+    except Exception:
+        has_ai_news = False
+
+    if has_sqlite_entries or has_ai_news:
+        return
+
+    entries_json_path = getattr(config, "entries_json_path", "entries.json")
+    ai_news_json_path = getattr(config, "ai_news_json_path", "ai_news.json")
+    processed_json_path = entries_json_path.replace(".json", "_processed.json")
+
+    def _log(message):
+        if logger and hasattr(logger, "info"):
+            logger.info(message)
+
+    if os.path.exists(entries_json_path):
+        try:
+            with open(entries_json_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+        except Exception:
+            data = []
+        if not isinstance(data, list):
+            data = []
+        if data:
+            try:
+                entries_repository.append_summary_items(data)
+            except Exception:
+                pass
+        try:
+            os.rename(entries_json_path, entries_json_path + ".bak")
+        except OSError:
+            pass
+        _log(f"migrated entries.json to SQLite, items={len(data)}")
+
+    if os.path.exists(processed_json_path):
+        try:
+            with open(processed_json_path, "r", encoding="utf-8") as f:
+                processed = json.load(f)
+        except Exception:
+            processed = []
+        if isinstance(processed, list):
+            for entry_id in processed:
+                try:
+                    entries_repository.add(str(entry_id))
+                except Exception:
+                    continue
+        try:
+            os.rename(processed_json_path, processed_json_path + ".bak")
+        except OSError:
+            pass
+        count = len(processed) if isinstance(processed, list) else 0
+        _log(f"migrated processed entries list to SQLite, count={count}")
+
+    if os.path.exists(ai_news_json_path):
+        try:
+            with open(ai_news_json_path, "r", encoding="utf-8") as f:
+                content = json.load(f)
+        except Exception:
+            content = ""
+        text = content if isinstance(content, str) else ""
+        if text:
+            try:
+                ai_news_repository.save_latest(text)
+            except Exception:
+                pass
+        try:
+            os.rename(ai_news_json_path, ai_news_json_path + ".bak")
+        except OSError:
+            pass
+        _log("migrated ai_news.json to SQLite")
+
+
 def create_webhook_processor(services):
     """Create the processor function for webhook queue consumer."""
 
@@ -226,10 +320,7 @@ def my_flask(services, entry_mode):
     logger.info("Starting API")
     cfg = services.config
     host = getattr(cfg, "debug_host", "0.0.0.0") or "0.0.0.0"
-    if getattr(cfg, "debug_enabled", False):
-        port = getattr(cfg, "debug_port", 8081)
-    else:
-        port = 80
+    port = getattr(cfg, "debug_port", 8081)
     app.run(host=host, port=port)
 
 
@@ -237,30 +328,29 @@ def bootstrap(config_path="config.yml"):
     config = Config.from_file(config_path)
     logger = get_logger(config.log_level)
     miniflux_client = MinifluxGateway(config.miniflux_base_url, config.miniflux_api_key)
-    gateway = LLMGateway(config)
+    llm_gateway = LLMGateway(config)
     llm_client = LLMRequestPool(
-        gateway,
-        max_concurrent=getattr(config, "llm_max_workers", 4),
-        rpm_limit=getattr(config, "llm_RPM", None),
-        daily_limit=getattr(config, "llm_daily_limit", None),
-        capacity=getattr(config, "llm_pool_capacity", None),
+        llm_gateway=llm_gateway,
+        max_concurrent=config.llm_max_workers,
+        rpm_limit=config.llm_RPM,
+        daily_limit=config.llm_daily_limit,
+        capacity=config.llm_pool_capacity,
     )
-    storage_backend = getattr(config, "storage_backend", "json")
+    storage_backend = getattr(config, "storage_backend", "sqlite")
     sqlite_path = getattr(config, "storage_sqlite_path", "runtime/miniflux_ai.db")
-    entries_lock = threading.Lock()
-    ai_news_lock = threading.Lock()
+    shared_lock = threading.Lock()
     if storage_backend == "sqlite":
-        entries_repository = EntriesRepositorySQLite(
-            path=sqlite_path, lock=entries_lock
-        )
-        ai_news_repository = AiNewsRepositorySQLite(path=sqlite_path, lock=ai_news_lock)
+        entries_repository = EntriesRepositorySQLite(path=sqlite_path, lock=shared_lock)
+        ai_news_repository = AiNewsRepositorySQLite(path=sqlite_path, lock=shared_lock)
+        migrate_json_to_sqlite_if_needed(config, entries_repository, ai_news_repository, logger)
     else:
-        entries_repository = EntriesRepository(path="entries.json", lock=entries_lock)
-        ai_news_repository = AiNewsRepository(path="ai_news.json", lock=ai_news_lock)
+        entries_repository = EntriesRepository(path="entries.json", lock=shared_lock)
+        ai_news_repository = AiNewsRepository(path="ai_news.json", lock=shared_lock)
     processed_news_ids = InMemoryProcessedNewsIds()
     entry_processor = build_rate_limited_processor(
         config,
         entries_repository=entries_repository,
+        processed_entries_repository=entries_repository,
         processed_news_ids=processed_news_ids,
     )
 

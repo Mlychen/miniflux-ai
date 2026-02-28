@@ -50,6 +50,14 @@ llm:
   # max_workers: 4
   # 每分钟请求上限（RPM），默认 1000
   # RPM: 15
+  # 可选：每日请求上限，不填表示不限制
+  # daily_limit: 10000
+  # 可选：LLM 请求池的内存状态容量
+  # pool_capacity: 2000
+  # 单次 LLM 调用的重试次数（总尝试 = 重试 + 1），默认 2
+  # request_expected_retries: 2
+  # 请求状态在池中的 TTL（秒），默认 600
+  # request_ttl_seconds: 600
 
 ai_news:
   # docker compose 环境建议使用 miniflux-ai 服务地址

@@ -17,6 +17,7 @@ class DatabaseManager:
     def __init__(self, path: str, lock: Optional[threading.Lock] = None):
         self.path = path
         self._lock = lock or threading.Lock()
+        self._local = threading.local()
         self._ensure_dir()
         self._enable_wal()
 
@@ -31,11 +32,24 @@ class DatabaseManager:
         conn = sqlite3.connect(self.path)
         try:
             conn.execute("PRAGMA journal_mode=WAL")
-            conn.execute("PRAGMA synchronous=NORMAL")
-            conn.execute("PRAGMA temp_store=MEMORY")
-            conn.execute("PRAGMA wal_autocheckpoint=1000")
         finally:
             conn.close()
+
+    def _configure_connection(self, conn: sqlite3.Connection) -> None:
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA synchronous=NORMAL")
+        conn.execute("PRAGMA temp_store=MEMORY")
+        conn.execute("PRAGMA wal_autocheckpoint=1000")
+        conn.execute("PRAGMA busy_timeout=5000")
+
+    def _get_connection(self) -> sqlite3.Connection:
+        existing = getattr(self._local, "conn", None)
+        if existing is not None:
+            return existing
+        conn = sqlite3.connect(self.path)
+        self._configure_connection(conn)
+        self._local.conn = conn
+        return conn
 
     @contextmanager
     def connection(self):
@@ -43,11 +57,26 @@ class DatabaseManager:
         Context manager for database connections.
         Ensures proper cleanup after use.
         """
-        conn = sqlite3.connect(self.path)
+        conn = self._get_connection()
         try:
             yield conn
+        except Exception:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+            raise
         finally:
+            self.close_thread_connection()
+
+    def close_thread_connection(self) -> None:
+        conn = getattr(self._local, "conn", None)
+        if conn is None:
+            return
+        try:
             conn.close()
+        finally:
+            self._local.conn = None
 
     def execute_batch(
         self, sql: str, params_list: List[Tuple[Any, ...]], lock: bool = True

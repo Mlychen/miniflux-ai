@@ -45,8 +45,9 @@ This project integrates with Miniflux to fetch RSS feed content via API or webho
   - Encapsulates Miniflux and LLM vendor APIs behind stable protocols.
 - **Usecase layer (`core/`)**
   - Implements polling, webhook batch processing, summary generation, and AI news workflows.
-- **Repository layer (`common/*_repository.py`)**
-  - Handles JSON persistence (`entries.json`, `ai_news.json`) with lock-safe operations.
+- **Repository layer (`common/*_repository*.py`)**
+  - Persists summaries and AI news in SQLite (`runtime/miniflux_ai.db`) using WAL and batch writes.
+  - Legacy JSON repositories (`entries.json`, `ai_news.json`) are still available when `storage_backend: json` is explicitly configured.
 - **Application wiring (`main.py`, `myapp/`)**
   - Composes gateways + repositories and injects them into usecases/routes.
 
@@ -54,13 +55,13 @@ Dependency direction: `gateway -> usecase -> repository` (runtime wiring done at
 
 ### App Factory Integration
 
-`create_app(...)` now takes repository dependencies directly. Typical integration:
+`create_app(...)` now takes repository dependencies directly. Typical integration (SQLite, default):
 
 ```python
 import threading
 
-from common.ai_news_repository import AiNewsRepository
-from common.entries_repository import EntriesRepository
+from common.ai_news_repository_sqlite import AiNewsRepositorySQLite
+from common.entries_repository_sqlite import EntriesRepositorySQLite
 from myapp import create_app
 
 shared_lock = threading.Lock()
@@ -70,10 +71,16 @@ app = create_app(
     llm_client=llm_client,
     logger=logger,
     entry_processor=entry_processor,
-    entries_repository=EntriesRepository(path='entries.json', lock=shared_lock),
-    ai_news_repository=AiNewsRepository(path='ai_news.json', lock=shared_lock),
+    entries_repository=EntriesRepositorySQLite(
+        path="runtime/miniflux_ai.db", lock=shared_lock
+    ),
+    ai_news_repository=AiNewsRepositorySQLite(
+        path="runtime/miniflux_ai.db", lock=shared_lock
+    ),
 )
 ```
+
+If you want to keep using the legacy JSON files, set `storage_backend: json` in `config` and inject `EntriesRepository` / `AiNewsRepository` instead.
 
 ## Requirements
 
@@ -92,7 +99,7 @@ The repository includes template configuration files: `config.sample.English.yml
 > http://miniflux_ai/miniflux-ai/webhook/entries.
 
 - **Miniflux**: Base URL and API key.
-- **LLM**: Model settings, API key, and endpoint. You can also set `timeout` and `max_workers` for multithreading.
+- **LLM**: Model settings, API key, and endpoint. You can also set `timeout`, `max_workers`, `RPM`, `daily_limit`, `pool_capacity`, `request_expected_retries`, and `request_ttl_seconds`.
 - **AI News**: Schedule and prompts for daily news generation
 - **Agents**: Define each agent's prompt, allow_list/deny_list filters, and output style（`style_block` controls whether the output uses an HTML blockquote wrapper）.
 
@@ -110,6 +117,13 @@ llm:
   base_url: https://api.your-llm-provider.com
   api_key: YOUR_LLM_API_KEY
   model: deepseek-chat
+  max_workers: 4
+  RPM: 1000
+  # optional
+  daily_limit: 10000
+  pool_capacity: 2000
+  request_expected_retries: 2
+  request_ttl_seconds: 600
 
 ai_news:
   url: http://miniflux_ai
@@ -128,6 +142,8 @@ ai_news:
    - `uv run python main.py`
 6. For sharing/debugging, use a redacted file (`config.redacted.yml`) and never publish `config.yml`.
 
+On first run with `storage_backend: sqlite` (default), if legacy `entries.json` / `entries_processed.json` / `ai_news.json` files are present and the SQLite database is still empty, the app will automatically import their data into `runtime/miniflux_ai.db` and rename the JSON files to `*.bak`.
+
 
 ## Docker Setup
 
@@ -145,7 +161,8 @@ services:
             TZ: Asia/Shanghai
         volumes:
             - ./config.yml:/app/config.yml
-            # - ./entries.json:/app/entries.json # Provide persistent for AI news
+            # Persist SQLite DB
+            - ./runtime:/app/runtime
 
 ```
 Refer to `config.sample.*.yml`, create `config.yml`

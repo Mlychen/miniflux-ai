@@ -23,12 +23,22 @@ class Config:
         self.llm_timeout = self.get_config_value('llm', 'timeout', 60)
         self.llm_max_workers = self.get_config_value('llm', 'max_workers', 4)
         self.llm_RPM = self.get_config_value('llm', 'RPM', 1000)
+        self.llm_daily_limit = self.get_config_value('llm', 'daily_limit', None)
+        self.llm_pool_capacity = self.get_config_value('llm', 'pool_capacity', None)
+        self.llm_request_expected_retries = self.get_config_value('llm', 'request_expected_retries', 2)
+        self.llm_request_ttl_seconds = self.get_config_value('llm', 'request_ttl_seconds', 600)
 
         self.ai_news_url = self.get_config_value('ai_news', 'url', None)
         self.ai_news_schedule = self.get_config_value('ai_news', 'schedule', None)
         self.ai_news_prompts = self.get_config_value('ai_news', 'prompts', None)
 
         self.agents = self.c.get('agents', {})
+
+        # Debug config
+        debug_config = self.c.get('debug', {})
+        self.debug_enabled = debug_config.get('enabled', False)
+        self.debug_host = debug_config.get('host', '0.0.0.0')
+        self.debug_port = debug_config.get('port', 8081)
 
     @classmethod
     def from_file(cls, path='config.yml'):

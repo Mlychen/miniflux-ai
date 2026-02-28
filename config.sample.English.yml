@@ -50,6 +50,14 @@ llm:
   # max_workers: 4
   # Request per minute (RPM) rate limit, default 1000
   # RPM: 15
+  # Optional daily request limit. Leave empty to disable.
+  # daily_limit: 10000
+  # Optional in-memory state capacity for LLM request pool.
+  # pool_capacity: 2000
+  # Retry attempts per single LLM call in pool (total attempts = retries + 1), default 2
+  # request_expected_retries: 2
+  # Request state TTL in seconds for pool tracking, default 600
+  # request_ttl_seconds: 600
 
 ai_news:
   # In Docker Compose, use the miniflux-ai service URL
