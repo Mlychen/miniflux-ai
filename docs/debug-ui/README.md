@@ -23,6 +23,11 @@
   - `GET /miniflux-ai/user/llm-pool/metrics`
   - `GET /miniflux-ai/user/llm-pool/failed-entries`
   - `POST /miniflux-ai/user/llm-pool/clear`
+  - `GET /miniflux-ai/user/tasks/failure-groups`
+  - `GET /miniflux-ai/user/tasks/failure-groups/tasks`
+  - `GET /miniflux-ai/user/tasks/<task_id>`
+  - `POST /miniflux-ai/user/tasks/failure-groups/requeue`
+  - `POST /miniflux-ai/user/tasks/<task_id>/requeue`
 
 ## 推荐的默认路径
 

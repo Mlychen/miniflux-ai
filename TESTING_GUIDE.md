@@ -19,7 +19,7 @@ This is the single entry point for test execution, live verification, and LLM te
 ### integrity
 
 - Scope:
-  - `entries.json` persistence correctness
+  - SQLite 仓储一致性（processed records / summaries）
   - idempotent skip for processed entries
   - AI news generation and cleanup consistency
 - Command:
@@ -31,17 +31,43 @@ This is the single entry point for test execution, live verification, and LLM te
 - Command:
   - `uv run python -m unittest -q tests.test_webhook_api`
 
+### task-store-sqlite
+
+- Scope:
+  - durable task state machine (`pending/running/retryable/dead/done`)
+  - claim lease/retry/requeue behavior
+  - failure-group aggregation and normalized `error_key`
+- Command:
+  - `uv run python -m unittest -q tests.test_task_store_sqlite`
+
+### task-worker
+
+- Scope:
+  - worker claim-process-mark loop
+  - retryable vs dead transition behavior
+  - runtime stop and polling behavior
+- Command:
+  - `uv run python -m unittest -q tests.test_task_worker`
+
+### task-query-api
+
+- Scope:
+  - `/miniflux-ai/user/tasks*` observability and requeue endpoints
+  - pagination/filter validation and error contracts
+- Command:
+  - `uv run python -m unittest -q tests.test_task_query_api`
+
 ### concurrency
 
 - Scope:
-  - concurrent `entries.json` write integrity
+  - concurrent repository write integrity
   - batch fetch path processes each unread entry
 - Command:
   - `uv run python -m unittest -q tests.test_concurrency_integrity`
 
 ### ai-news-api
 
-- Scope: `/miniflux-ai/rss/ai-news` output and `ai_news.json` consume-and-clear behavior.
+- Scope: `/miniflux-ai/rss/ai-news` output and AI news repository consume-and-clear behavior.
 - Command:
   - `uv run python -m unittest -q tests.test_ai_news_api`
 
@@ -77,27 +103,25 @@ This is the single entry point for test execution, live verification, and LLM te
 - Command:
   - `uv run python -m unittest -q tests.test_core_helpers`
 
-### ai-news-repository
+### ai-news-repository-sqlite
 
 - Scope:
-  - `ai_news.json` repository save/consume semantics
-  - missing-file fallback behavior
+  - SQLite `ai_news` repository save/consume semantics
 - Command:
-  - `uv run python -m unittest -q tests.test_ai_news_repository`
+  - `uv run python -m unittest -q tests.test_ai_news_repository_sqlite`
 
-### entries-repository
+### entries-repository-sqlite
 
 - Scope:
-  - `entries.json` repository append/read/clear semantics
-  - missing-file fallback behavior
+  - SQLite `entries` repository append/read/clear semantics
 - Command:
-  - `uv run python -m unittest -q tests.test_entries_repository`
+  - `uv run python -m unittest -q tests.test_entries_repository_sqlite`
 
 ### unit-all
 
 - Scope: all local unit modules.
 - Command:
-  - `uv run python -m unittest -q tests.test_filter tests.test_config tests.test_data_integrity tests.test_webhook_api tests.test_concurrency_integrity tests.test_ai_news_api tests.test_batch_usecase tests.test_service_containers tests.test_adapters tests.test_core_helpers tests.test_ai_news_repository tests.test_entries_repository`
+  - `uv run python -m unittest discover -q tests`
 
 ### lint
 
@@ -118,8 +142,8 @@ This is the single entry point for test execution, live verification, and LLM te
 2. Miniflux connectivity:
    - `uv run python -c "import miniflux; from common.config import Config; c=Config.from_file('config.yml'); cli=miniflux.Client(c.miniflux_base_url, api_key=c.miniflux_api_key); print(cli.me().get('username'))"`
 3. Webhook checks:
-   - invalid signature -> expect `403`
-   - valid signature -> expect `200`
+    - invalid signature -> expect `403`
+    - valid signature -> expect `202` (accepted only after durable task persistence)
 4. Polling check:
    - one `fetch_unread_entries(...)` run
 5. AI News check:
@@ -134,6 +158,9 @@ For release gating and 24h observation criteria, use:
 
 > 目标：在连上真实 Miniflux 和 LLM 的环境下，从入口到 AI News 输出进行一次完整验证（可用于人工测试或“编程 LLM”执行 e2e 检查）。
 >
+> 调试工具：
+> - **Browser-Use**: 如需在受限环境（如 Trae IDE、Docker）中使用 `browser-use` 进行自动化测试或调试，请参考 [BrowseUse_Guide.md](docs/BrowseUse_Guide.md)。该文档提供了解决沙箱权限和路径问题的标准代码范例。
+>
 > 前提：
 > - `config.yml` 已配置真实 `miniflux.base_url` / `miniflux.api_key`
 > - `llm` 段已配置可用的 provider / api_key / model
@@ -141,7 +168,7 @@ For release gating and 24h observation criteria, use:
 
 1. 启动应用
    - 轮询或 webhook 入口根据 `miniflux.entry_mode` 自动决定：
-     - `webhook` 或 `auto`+有 `webhook_secret`：仅启动 webhook（Flask + 队列）
+     - `webhook` 或 `auto`+有 `webhook_secret`：仅启动 webhook（Flask + durable task worker）
      - `polling`：仅启动轮询
    - 本地/服务器启动命令示例：
      - `uv run python main.py *>> .\miniflux-ai.log`
@@ -152,7 +179,7 @@ For release gating and 24h observation criteria, use:
      - Miniflux `me()` 检查
    - webhook 模式下：
      - 在 Miniflux 后台配置 Webhook URL：`<your-base-url>/miniflux-ai/webhook/entries`
-     - 使用有效/无效签名请求校验 `403 / 200/202` 行为（可通过测试或手工 curl）
+     - 使用有效/无效签名请求校验 `403 / 202` 行为（可通过测试或手工 curl）
 
 3. 条目处理链路
    - 轮询模式：触发一次 `fetch_unread_entries(...)`（或等待 schedule）
@@ -166,7 +193,7 @@ For release gating and 24h observation criteria, use:
      - `generate_daily_news(miniflux_client, config, llm_client, logger, ai_news_repository, entries_repository)`
    - 检查：
      - 日志中出现 `Generating daily news` 与 `Generated daily news successfully`
-     - `ai_news.json` 写入并在 `/miniflux-ai/rss/ai-news` 被消费清空
+      - AI news 写入并在 `/miniflux-ai/rss/ai-news` 被消费清空
      - 浏览器或 curl 访问：`GET /miniflux-ai/rss/ai-news` 返回包含：
        - `<rss` 及 “Powered by miniflux-ai”
        - 基于当日内容生成的 AI News 条目
@@ -188,7 +215,7 @@ For release gating and 24h observation criteria, use:
 ### Prompt A: Run one module
 
 ```text
-Run miniflux-ai test module: {filter|config|integrity|webhook-api|concurrency|ai-news-api|batch-usecase|service-containers|adapters|core-helpers|ai-news-repository|entries-repository}.
+Run miniflux-ai test module: {filter|config|integrity|webhook-api|task-store-sqlite|task-worker|task-query-api|concurrency|ai-news-api|batch-usecase|service-containers|adapters|core-helpers|ai-news-repository-sqlite|entries-repository-sqlite}.
 Use uv commands.
 Do not modify code.
 Return:
@@ -202,7 +229,7 @@ Return:
 
 ```text
 Run:
-uv run python -m unittest -q tests.test_filter tests.test_config tests.test_data_integrity tests.test_webhook_api tests.test_concurrency_integrity tests.test_ai_news_api tests.test_batch_usecase tests.test_service_containers tests.test_adapters tests.test_core_helpers tests.test_ai_news_repository tests.test_entries_repository
+uv run python -m unittest discover -q tests
 
 Return:
 1) summary counts
@@ -217,7 +244,7 @@ Validate miniflux-ai live path with current config.yml:
 1) bootstrap check
 2) Miniflux me() check
 3) webhook invalid signature -> expect 403
-4) webhook valid signature -> expect 200
+4) webhook valid signature -> expect 202
 5) one polling run
 6) daily news generation + rss check
 
@@ -233,8 +260,8 @@ Required:
 - one live generate_daily_news run (if config is available)
 
 Evaluate:
-1) entries.json lifecycle
-2) ai_news.json lifecycle
+1) entries repository lifecycle
+2) ai_news repository lifecycle
 3) duplicate-processing risk
 4) concurrency/file-lock risk
 

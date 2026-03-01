@@ -1,54 +1,54 @@
-# Rollout Checklist
+# Rollout Checklist（Task 架构）
 
 ## 1) Pre-flight
 
-1. Create environment:
+1. 创建环境：
    - `uv venv .venv`
-2. Install dependencies:
+2. 安装依赖：
    - `uv pip install -r requirements-dev.txt`
-3. Verify tests:
-   - `uv run python -m unittest -q tests.test_filter tests.test_config tests.test_data_integrity tests.test_webhook_api tests.test_concurrency_integrity tests.test_ai_news_api tests.test_batch_usecase tests.test_service_containers tests.test_adapters tests.test_core_helpers tests.test_ai_news_repository tests.test_entries_repository`
-4. (Alternative without uv)
-   - `pip install -r requirements-dev.txt`
-   - `python -m unittest -q tests.test_filter tests.test_config tests.test_data_integrity tests.test_webhook_api tests.test_concurrency_integrity tests.test_ai_news_api tests.test_batch_usecase tests.test_service_containers tests.test_adapters tests.test_core_helpers tests.test_ai_news_repository tests.test_entries_repository`
+3. 运行全量回归：
+   - `uv run python -m unittest discover -q tests`
+4. 关键模块最小回归（可选快速）：
+   - `uv run python -m unittest -q tests.test_task_store_sqlite tests.test_task_worker tests.test_task_query_api tests.test_webhook_api`
 
 ## 2) Runtime Smoke Test
 
-1. Use your real config file:
-   - `uv run python -c "from main import bootstrap; s=bootstrap('config.yml'); print('bootstrap ok')"`
-2. Start service:
+1. 配置检查：
+   - `uv run python -c "from main import bootstrap; bootstrap('config.yml'); print('bootstrap ok')"`
+2. 启动服务：
    - `uv run python main.py`
-3. Verify log lines:
-   - Miniflux connected
-   - schedule added
-   - webhook endpoint started (if enabled)
+3. 启动后日志应出现：
+   - `Successfully connected to Miniflux!`
+   - `TaskWorker.start:`
 
 ## 3) Functional Checks
 
-1. Polling path:
-   - Ensure unread entries are fetched and updated.
-2. Webhook path:
-   - Send signed webhook payload and verify 200.
-   - Missing/invalid signature should return 403.
-3. AI news path:
-   - Wait for scheduled run and verify `/miniflux-ai/rss/ai-news` returns new entry.
+1. Webhook 路径：
+   - 无效签名请求返回 `403`
+   - 有效签名请求返回 `202`
+   - 返回体含 `status=accepted` 和 `accepted/duplicates`
+2. 任务可观测接口：
+   - `GET /miniflux-ai/user/tasks/metrics` 返回 `status=ok`
+   - `GET /miniflux-ai/user/tasks/failure-groups` 返回 `status=ok`
+3. Debug UI 排障面板：
+   - `GET /debug/` 可访问
+   - 分组查询、样本查询、重入队动作可用
 
-## 4) 24h Gray Observation
+## 4) 24h Observation
 
-1. Track error rate in logs:
-   - Exceptions in schedule loop
-   - LLM timeout/errors
-2. Track data integrity:
-   - `entries.json` is cleared after daily news generation
-   - No duplicated content prefixes in updated entries
-3. Track API behavior:
-   - Webhook 403 ratio only from invalid requests
+1. 关注 worker 错误：
+   - `TaskWorker.claim_tasks error=`
+   - `TaskWorker.task_result ... status=retryable|dead`
+2. 关注 webhook 持久化错误：
+   - `Webhook task persistence failed`
+3. 关注失败分组趋势：
+   - `failure-groups` 中是否出现持续增长的同类 `error_key`
 
 ## 5) Release Gate
 
-Proceed only if all conditions pass:
+满足以下条件再发布：
 
-1. Unit tests pass.
-2. Runtime smoke test passes.
-3. Polling/webhook/ai-news all pass.
-4. No abnormal error spikes in 24h gray.
+1. 全量测试通过。
+2. Webhook `403/202` 契约正确。
+3. Task metrics/failure-groups 接口稳定。
+4. 无持续异常增长的 `dead` 任务分组。

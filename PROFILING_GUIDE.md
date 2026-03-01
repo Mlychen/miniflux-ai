@@ -8,7 +8,7 @@
 
 ### 1.1 生成 .pstats
 
-- Webhook/API 路径（包含 Flask test client + webhook/queue 相关代码）：
+- Webhook/API 路径（包含 Flask test client + webhook/task worker 相关代码）：
   - `uv run python -m cProfile -o runtime/profile_webhook_api.pstats -m unittest -q tests.test_webhook_api`
 - 批处理路径（并发调度与异常聚合）：
   - `uv run python -m cProfile -o runtime/profile_batch_usecase.pstats -m unittest -q tests.test_batch_usecase`
@@ -73,10 +73,10 @@
 
 ## 4) 常见热点的解读模板
 
-- `common/json_storage.py` 高占比：说明 `entries.json`/`processed_entries.json` 在高频全量读写，通常是主要瓶颈。
+- `common/task_store_sqlite.py` / `common/sqlite_manager.py` 高占比：优先检查任务 claim/update 查询与索引是否匹配。
 - `markdown.py` 高占比：说明渲染开销高，agent 多/文本长时会放大。
 - `re.py` / `_parse_preprocess_output` 高占比：说明正则回退路径在处理异常文本。
-- `core/queue.py` 高占比且输入为空：说明队列消费者可能在空转。
+- `core/task_worker.py` 高占比且吞吐低：优先检查 worker 参数（batch/lease/poll）和重试抖动。
 
 ## 5) Windows 提示
 

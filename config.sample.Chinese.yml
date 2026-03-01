@@ -11,27 +11,20 @@ miniflux:
   # entry_mode: auto
   # 使用 Miniflux webhook 时必须配置 webhook_secret
   webhook_secret: YOUR_MINIFLUX_WEBHOOK_SECRET
-  # webhook 队列缓冲设置（仅 entry_mode=webhook 时生效）
-  # 队列最大容量，超过返回 429
-  # webhook_queue_max_size: 1000
-  # 后台消费线程数
-  # webhook_queue_workers: 2
-  # 轮询间隔（分钟）
-  # 未设置 schedule_interval 时：
-  # - defaults to 1 minute without webhook_secret
-  # - defaults to 15 minutes with webhook_secret
-  # schedule_interval: 15
-  # 去重标记：处理完成后写入内容，用于去重检测
-  # dedup_marker: "<!-- miniflux-ai:processed -->"
-  base_url: https://your-miniflux.example.com
-  api_key: YOUR_MINIFLUX_API_KEY
-  # 使用 Miniflux webhook 时必须配置 webhook_secret
-  webhook_secret: YOUR_MINIFLUX_WEBHOOK_SECRET
+  # 持久化任务 worker 参数（webhook 模式生效）
+  # task_workers: 2
+  # task_claim_batch_size: 20
+  # task_lease_seconds: 60
+  # task_poll_interval: 1.0
+  # task_retry_delay_seconds: 30
+  # task_max_attempts: 5
   # 轮询间隔（分钟）
   # 未设置 schedule_interval 时：
   # - 无 webhook_secret 默认 1 分钟
   # - 有 webhook_secret 默认 15 分钟
   # schedule_interval: 15
+  # 去重标记：处理完成后写入内容，用于去重检测
+  # dedup_marker: "<!-- miniflux-ai:processed -->"
 
 llm:
   # provider: gemini # openai（默认）或 gemini

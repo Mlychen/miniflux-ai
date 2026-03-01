@@ -1,7 +1,5 @@
 import concurrent.futures
 from dataclasses import dataclass
-import json
-import os
 import threading
 import time
 import traceback
@@ -10,19 +8,18 @@ import schedule
 
 from adapters import LLMGateway, MinifluxGateway
 from adapters.protocols import LLMClientProtocol, MinifluxGatewayProtocol
-from common.ai_news_repository import AiNewsRepository
 from common.ai_news_repository_sqlite import AiNewsRepositorySQLite
 from common.config import Config
-from common.entries_repository import EntriesRepository
 from common.entries_repository_sqlite import EntriesRepositorySQLite
 from common.logger import get_logger
+from common.task_store_sqlite import TaskStoreSQLite
 from core.ai_news_helpers import has_ai_news_feed
 from core.fetch_unread_entries import fetch_unread_entries
 from core.generate_daily_news import generate_daily_news
 from core.llm_pool import LLMRequestPool
 from core.process_entries import InMemoryProcessedNewsIds, build_rate_limited_processor
 from core.process_entries_batch import process_entries_batch
-from core.queue import InMemoryQueueBackend, WebhookQueue
+from core.task_worker import PermanentTaskError, TaskWorker
 from myapp import create_app
 
 
@@ -67,11 +64,6 @@ def should_start_polling(entry_mode):
     return entry_mode == "polling"
 
 
-def should_use_queue(entry_mode):
-    """Determine if webhook queue should be used."""
-    return entry_mode == "webhook"
-
-
 @dataclass(frozen=True)
 class RuntimeServices:
     config: Config
@@ -79,8 +71,9 @@ class RuntimeServices:
     miniflux_client: MinifluxGatewayProtocol
     llm_client: LLMClientProtocol
     entry_processor: object
-    entries_repository: EntriesRepository
-    ai_news_repository: AiNewsRepository
+    entries_repository: object
+    ai_news_repository: object
+    task_store: object = None
 
 
 def wait_for_miniflux(miniflux_client, logger):
@@ -158,153 +151,74 @@ def my_schedule(services, entry_mode):
             time.sleep(30)
 
 
-def migrate_json_to_sqlite_if_needed(config, entries_repository, ai_news_repository, logger):
-    try:
-        from common.entries_repository_sqlite import EntriesRepositorySQLite
-        from common.ai_news_repository_sqlite import AiNewsRepositorySQLite
-    except Exception:
-        return
-
-    if not isinstance(entries_repository, EntriesRepositorySQLite):
-        return
-
-    try:
-        existing_entries = entries_repository.read_all()
-        has_sqlite_entries = bool(existing_entries)
-    except Exception:
-        has_sqlite_entries = False
-
-    has_ai_news = False
-    try:
-        with ai_news_repository.db.connection() as conn:
-            row = conn.execute("SELECT COUNT(*) FROM ai_news").fetchone()
-            has_ai_news = bool(row and row[0] > 0)
-    except Exception:
-        has_ai_news = False
-
-    if has_sqlite_entries or has_ai_news:
-        return
-
-    entries_json_path = getattr(config, "entries_json_path", "entries.json")
-    ai_news_json_path = getattr(config, "ai_news_json_path", "ai_news.json")
-    processed_json_path = entries_json_path.replace(".json", "_processed.json")
-
-    def _log(message):
-        if logger and hasattr(logger, "info"):
-            logger.info(message)
-
-    if os.path.exists(entries_json_path):
-        try:
-            with open(entries_json_path, "r", encoding="utf-8") as f:
-                data = json.load(f)
-        except Exception:
-            data = []
-        if not isinstance(data, list):
-            data = []
-        if data:
-            try:
-                entries_repository.append_summary_items(data)
-            except Exception:
-                pass
-        try:
-            os.rename(entries_json_path, entries_json_path + ".bak")
-        except OSError:
-            pass
-        _log(f"migrated entries.json to SQLite, items={len(data)}")
-
-    if os.path.exists(processed_json_path):
-        try:
-            with open(processed_json_path, "r", encoding="utf-8") as f:
-                processed = json.load(f)
-        except Exception:
-            processed = []
-        if isinstance(processed, list):
-            for entry_id in processed:
-                try:
-                    entries_repository.add(str(entry_id))
-                except Exception:
-                    continue
-        try:
-            os.rename(processed_json_path, processed_json_path + ".bak")
-        except OSError:
-            pass
-        count = len(processed) if isinstance(processed, list) else 0
-        _log(f"migrated processed entries list to SQLite, count={count}")
-
-    if os.path.exists(ai_news_json_path):
-        try:
-            with open(ai_news_json_path, "r", encoding="utf-8") as f:
-                content = json.load(f)
-        except Exception:
-            content = ""
-        text = content if isinstance(content, str) else ""
-        if text:
-            try:
-                ai_news_repository.save_latest(text)
-            except Exception:
-                pass
-        try:
-            os.rename(ai_news_json_path, ai_news_json_path + ".bak")
-        except OSError:
-            pass
-        _log("migrated ai_news.json to SQLite")
-
-
-def create_webhook_processor(services):
-    """Create the processor function for webhook queue consumer."""
+def create_task_record_processor(services):
+    """Create processor for durable task records."""
 
     def process_task(task):
-        """Process a single webhook task from the queue."""
         config = services.config
         logger = services.logger
         miniflux_client = services.miniflux_client
         llm_client = services.llm_client
         entry_processor = services.entry_processor
 
-        batch_entries = task.get("entries", [])
-        feed = task.get("feed", {})
+        payload = task.payload if hasattr(task, "payload") else {}
+        if not isinstance(payload, dict):
+            raise PermanentTaskError("invalid payload: payload must be an object")
 
-        # Convert to list format expected by process_entries_batch
-        batch_entries = [dict(entry, feed=feed) for entry in batch_entries]
+        entry = payload.get("entry")
+        feed = payload.get("feed")
+        if not isinstance(entry, dict):
+            raise PermanentTaskError("invalid payload: missing entry")
+        if not isinstance(feed, dict):
+            raise PermanentTaskError("invalid payload: missing feed")
 
-        try:
-            result = process_entries_batch(
-                config,
-                batch_entries,
-                miniflux_client,
-                entry_processor,
-                llm_client,
-                logger,
+        trace_id = str(getattr(task, "trace_id", "") or "")
+        entry_data = dict(entry)
+        entry_data["feed"] = feed
+        if trace_id:
+            entry_data["_trace_id"] = trace_id
+
+        result = process_entries_batch(
+            config,
+            [entry_data],
+            miniflux_client,
+            entry_processor,
+            llm_client,
+            logger,
+        )
+        if result["failures"] > 0:
+            raise RuntimeError(
+                f"task processing failures={result['failures']} task_id={getattr(task, 'id', 'unknown')}"
             )
-            if result["failures"] > 0:
-                logger.error(
-                    f"Webhook batch processing had {result['failures']} failures"
-                )
-        except Exception as e:
-            logger.error(f"Error processing webhook batch: {e}")
-            logger.error(traceback.format_exc())
 
     return process_task
 
 
 def my_flask(services, entry_mode):
     logger = services.logger
+    config = services.config
 
-    # Create webhook queue if in webhook mode
-    webhook_queue = None
-    if should_use_queue(entry_mode):
-        queue_backend = InMemoryQueueBackend(
-            max_size=services.config.miniflux_webhook_queue_max_size
+    # Create durable task worker stack if in webhook mode.
+    task_store = None
+    if entry_mode == "webhook":
+        task_store = services.task_store
+        if task_store is None:
+            raise RuntimeError(
+                "Webhook mode requires persistent task store. task_store is not configured."
+            )
+        task_worker = TaskWorker(
+            task_store=task_store,
+            workers=getattr(config, "miniflux_task_workers", 2),
+            claim_batch_size=getattr(config, "miniflux_task_claim_batch_size", 20),
+            lease_seconds=getattr(config, "miniflux_task_lease_seconds", 60),
+            poll_interval=getattr(config, "miniflux_task_poll_interval", 1.0),
+            retry_delay_seconds=getattr(config, "miniflux_task_retry_delay_seconds", 30),
+            logger=logger,
         )
-        webhook_queue = WebhookQueue(
-            backend=queue_backend,
-            workers=services.config.miniflux_webhook_queue_workers,
-        )
-        # Start consumer threads
-        processor_fn = create_webhook_processor(services)
-        webhook_queue.start(processor_fn)
+        task_processor_fn = create_task_record_processor(services)
+        task_worker.start(task_processor_fn)
         logger.info(
-            f"Started webhook queue with {services.config.miniflux_webhook_queue_workers} workers"
+            f"Started persistent task worker with {getattr(config, 'miniflux_task_workers', 2)} workers"
         )
 
     app = create_app(
@@ -315,7 +229,7 @@ def my_flask(services, entry_mode):
         entry_processor=services.entry_processor,
         entries_repository=services.entries_repository,
         ai_news_repository=services.ai_news_repository,
-        webhook_queue=webhook_queue,
+        task_store=task_store,
     )
     logger.info("Starting API")
     cfg = services.config
@@ -331,21 +245,16 @@ def bootstrap(config_path="config.yml"):
     llm_gateway = LLMGateway(config)
     llm_client = LLMRequestPool(
         llm_gateway=llm_gateway,
-        max_concurrent=config.llm_max_workers,
-        rpm_limit=config.llm_RPM,
-        daily_limit=config.llm_daily_limit,
-        capacity=config.llm_pool_capacity,
+        max_concurrent=getattr(config, "llm_max_workers", 4),
+        rpm_limit=getattr(config, "llm_RPM", 1000),
+        daily_limit=getattr(config, "llm_daily_limit", None),
+        capacity=getattr(config, "llm_pool_capacity", None),
     )
-    storage_backend = getattr(config, "storage_backend", "sqlite")
     sqlite_path = getattr(config, "storage_sqlite_path", "runtime/miniflux_ai.db")
     shared_lock = threading.Lock()
-    if storage_backend == "sqlite":
-        entries_repository = EntriesRepositorySQLite(path=sqlite_path, lock=shared_lock)
-        ai_news_repository = AiNewsRepositorySQLite(path=sqlite_path, lock=shared_lock)
-        migrate_json_to_sqlite_if_needed(config, entries_repository, ai_news_repository, logger)
-    else:
-        entries_repository = EntriesRepository(path="entries.json", lock=shared_lock)
-        ai_news_repository = AiNewsRepository(path="ai_news.json", lock=shared_lock)
+    task_store = TaskStoreSQLite(path=sqlite_path, lock=shared_lock)
+    entries_repository = EntriesRepositorySQLite(path=sqlite_path, lock=shared_lock)
+    ai_news_repository = AiNewsRepositorySQLite(path=sqlite_path, lock=shared_lock)
     processed_news_ids = InMemoryProcessedNewsIds()
     entry_processor = build_rate_limited_processor(
         config,
@@ -362,6 +271,7 @@ def bootstrap(config_path="config.yml"):
         entry_processor=entry_processor,
         entries_repository=entries_repository,
         ai_news_repository=ai_news_repository,
+        task_store=task_store,
     )
 
 

@@ -80,4 +80,4 @@ auth_basic_user_file /etc/nginx/conf.d/.htpasswd;
 
 - 局域网内允许网段可打开 `http://IP:PORT/debug/`
 - 非允许网段访问直接被拒绝（403/401）
-- Debug UI 操作接口均可用（manual-process/metrics/failed-entries/clear）
+- Debug UI 操作接口均可用（manual-process/metrics/failed-entries/clear/tasks-failure-groups/requeue）

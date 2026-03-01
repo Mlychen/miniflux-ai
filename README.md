@@ -41,17 +41,36 @@ This project integrates with Miniflux to fetch RSS feed content via API or webho
 
 ## Architecture
 
+### Current Structure
+
 - **Gateway layer (`adapters/`)**
   - Encapsulates Miniflux and LLM vendor APIs behind stable protocols.
 - **Usecase layer (`core/`)**
   - Implements polling, webhook batch processing, summary generation, and AI news workflows.
 - **Repository layer (`common/*_repository*.py`)**
   - Persists summaries and AI news in SQLite (`runtime/miniflux_ai.db`) using WAL and batch writes.
-  - Legacy JSON repositories (`entries.json`, `ai_news.json`) are still available when `storage_backend: json` is explicitly configured.
 - **Application wiring (`main.py`, `myapp/`)**
   - Composes gateways + repositories and injects them into usecases/routes.
 
-Dependency direction: `gateway -> usecase -> repository` (runtime wiring done at app/bootstrap boundary).
+Current dependency direction: `gateway -> usecase -> repository` (runtime wiring done at app/bootstrap boundary).
+
+### Target Blueprint (Readability + Extensibility + Performance)
+
+The project is moving toward a task-state architecture with a persistent queue and atomic task claiming:
+
+- **Ingest layer (`myapp/webhook_ingest.py`)**
+  - Validate webhook, normalize payload, persist task, return `202` only after durable write.
+- **Worker layer (`application/worker`)**
+  - Claim tasks in batches, process with retry policy, finalize to `done/retry/dead`.
+- **Processor layer (`domain/processor`)**
+  - Pure business logic only (preprocess, agents, rendering, source update), no queue/state orchestration.
+- **Infrastructure layer (`infrastructure/*`)**
+  - Task store, Miniflux and LLM adapters, observability integration.
+
+Target dependency direction: `interface -> application -> domain <- infrastructure`.
+
+For details, see [`docs/ARCHITECTURE_BLUEPRINT.md`](docs/ARCHITECTURE_BLUEPRINT.md).
+Implementation baseline (frozen): [`docs/plans/2026-03-01-persistent-task-implementation-plan.md`](docs/plans/2026-03-01-persistent-task-implementation-plan.md).
 
 ### App Factory Integration
 
@@ -80,7 +99,7 @@ app = create_app(
 )
 ```
 
-If you want to keep using the legacy JSON files, set `storage_backend: json` in `config` and inject `EntriesRepository` / `AiNewsRepository` instead.
+Runtime persistence is SQLite-only in current architecture.
 
 ## Requirements
 
@@ -112,6 +131,13 @@ miniflux:
   base_url: https://your-miniflux.example.com
   api_key: YOUR_MINIFLUX_API_KEY
   webhook_secret: YOUR_MINIFLUX_WEBHOOK_SECRET
+  # durable task processing (webhook mode requires task store)
+  task_workers: 2
+  task_claim_batch_size: 20
+  task_lease_seconds: 60
+  task_poll_interval: 1.0
+  task_retry_delay_seconds: 30
+  task_max_attempts: 5
 
 llm:
   base_url: https://api.your-llm-provider.com
@@ -129,6 +155,44 @@ ai_news:
   url: http://miniflux_ai
 ```
 
+Webhook mode behavior:
+- `/miniflux-ai/webhook/entries` always persists to task store first.
+- If task store is not configured/available, webhook returns `500` and does not fall back to in-memory queue/synchronous processing.
+
+Task observability APIs:
+- `GET /miniflux-ai/user/tasks?status=&limit=&offset=&include_payload=`
+  - List durable tasks (`status` optional, `limit` defaults to `100`, max `500`, `include_payload` defaults to `false`).
+- `GET /miniflux-ai/user/tasks/<task_id>`
+  - Query one task by id.
+- `GET /miniflux-ai/user/tasks/metrics`
+  - Return queue and flow metrics (`window_seconds` optional, default `300`, range `60-3600`):
+    - queue water level: `pending/running/retryable/dead/done`, `total`, `backlog`
+    - runnable depth: `ready_to_claim`, `delayed_retry`
+    - flow/quality: `throughput_done_per_minute`, `terminal_failure_rate`, `terminal_failure_rate_window`
+    - retry pressure: `retries_total_estimated`, `retries_per_task_estimated`, `avg_attempts_done`, `avg_attempts_dead`
+- `GET /miniflux-ai/user/tasks/failure-groups?status=&error=&error_key=&limit=&offset=`
+  - Aggregate failed tasks by `status + normalized error_key` for quick triage (`status` optional: `retryable|dead`).
+  - `error` will be normalized into `error_key` (numbers/UUID/URL noise removed) for stable grouping.
+- `GET /miniflux-ai/user/tasks/failure-groups/tasks?status=&error=&error_key=&limit=&offset=&include_payload=`
+  - Drill down from failure groups to concrete failed task samples.
+- `POST /miniflux-ai/user/tasks/failure-groups/requeue`
+  - Requeue by failure group filter (`status` optional `retryable|dead`; `error` or `error_key` optional).
+- `POST /miniflux-ai/user/tasks/<task_id>/requeue`
+  - Requeue one task (supported source states: `dead|retryable|running`) to `pending`.
+- `POST /miniflux-ai/user/tasks/requeue`
+  - Batch requeue by filter (`status` default `dead`; optional `error`/`error_key` normalized group filter; `limit` default `100`).
+
+Debug UI:
+- Enable `debug_enabled: true`, then open `/debug/`.
+- `任务排障` 面板支持最小闭环：
+  - 查询失败分组：`GET /miniflux-ai/user/tasks/failure-groups`
+  - 查看分组任务样本：`GET /miniflux-ai/user/tasks/failure-groups/tasks`
+  - 查询任务详情：`GET /miniflux-ai/user/tasks/<task_id>`
+  - 按筛选批量重入队：`POST /miniflux-ai/user/tasks/failure-groups/requeue`
+  - 分组重入队：`POST /miniflux-ai/user/tasks/failure-groups/requeue`
+  - 单任务重入队：`POST /miniflux-ai/user/tasks/<task_id>/requeue`
+- 该面板用于快速定位失败热点（`status + error_key`）并执行人工重试。
+
 ### Working Method
 
 1. Create local config from sample.
@@ -142,7 +206,7 @@ ai_news:
    - `uv run python main.py`
 6. For sharing/debugging, use a redacted file (`config.redacted.yml`) and never publish `config.yml`.
 
-On first run with `storage_backend: sqlite` (default), if legacy `entries.json` / `entries_processed.json` / `ai_news.json` files are present and the SQLite database is still empty, the app will automatically import their data into `runtime/miniflux_ai.db` and rename the JSON files to `*.bak`.
+Data persistence uses `runtime/miniflux_ai.db` as the single source of truth.
 
 
 ## Docker Setup
@@ -185,14 +249,14 @@ docker-compose up -d
 1. Create virtual environment: `uv venv .venv`
 2. Install dependencies: `uv pip install -r requirements-dev.txt`
 3. Run unit tests:
-   `uv run python -m unittest -q tests.test_filter tests.test_config tests.test_data_integrity tests.test_webhook_api tests.test_concurrency_integrity tests.test_ai_news_api tests.test_batch_usecase tests.test_service_containers tests.test_adapters tests.test_core_helpers tests.test_ai_news_repository tests.test_entries_repository`
+   `uv run python -m unittest discover -q tests`
 4. Run app: `uv run python main.py`
 
 ### Use pip (alternative)
 
 1. Install development dependencies: `pip install -r requirements-dev.txt`
 2. Run unit tests:
-   `python -m unittest -q tests.test_filter tests.test_config tests.test_data_integrity tests.test_webhook_api tests.test_concurrency_integrity tests.test_ai_news_api tests.test_batch_usecase tests.test_service_containers tests.test_adapters tests.test_core_helpers tests.test_ai_news_repository tests.test_entries_repository`
+   `python -m unittest discover -q tests`
 3. Optional: run `pytest -q` if you prefer pytest runner.
 
 ## Testing Modules and Skill

@@ -45,6 +45,46 @@ items 每项通常包含：
   - `{}`
   - 或 `{"entry_key":"..."}`
 
+## 任务排障接口（已实现）
+
+### 任务详情
+
+- `GET /miniflux-ai/user/tasks/<task_id>`
+- 返回：
+  - 200：`{"status":"ok","task":{...}}`
+  - 404：`{"status":"not_found","task_id":"..."}`
+  - 400：`{"status":"error","message":"invalid task_id"}`
+
+### 失败分组列表
+
+- `GET /miniflux-ai/user/tasks/failure-groups?status=&error=&error_key=&limit=&offset=`
+- 返回：
+  - `status_filter`：可选 `retryable|dead`
+  - `error_key_filter`：对 `error` 归一化后的分组键
+  - `groups[]`：`status/error_key/error/count/latest_updated_at/oldest_created_at`
+
+### 失败分组任务样本
+
+- `GET /miniflux-ai/user/tasks/failure-groups/tasks?status=&error=&error_key=&limit=&offset=&include_payload=`
+- 返回：
+  - `tasks[]`：任务详情（默认不含 payload，可通过 `include_payload=true` 打开）
+
+### 按分组批量重入队
+
+- `POST /miniflux-ai/user/tasks/failure-groups/requeue`
+- body：
+  - `status`：可选 `retryable|dead`
+  - `error` 或 `error_key`：可选
+  - `limit`：最多重入队数量
+- 返回：`{"status":"ok","requeued":N,...}`
+
+### 单任务重入队
+
+- `POST /miniflux-ai/user/tasks/<task_id>/requeue`
+- 返回：
+  - 200：`{"status":"ok","task_id":"...","requeued":true}`
+  - 404：`{"status":"not_found","task_id":"..."}`
+
 ## Debug 友好增强建议（可选）
 
 这些增强不是 Debug UI MVP 的硬要求，但会显著提升排障效率。
@@ -56,7 +96,7 @@ items 每项通常包含：
   - `version` / `build_time`
   - `entry_mode`（polling/webhook）
   - `http_api_enabled`
-  - `storage_backend`（json/sqlite）
+  - `storage_engine`（sqlite）
   - `llm_pool` 配置（隐去敏感信息）
 
 用途：Debug UI 首页直接展示运行态信息，避免“接口 404 是没启动 Flask 还是路由问题”。

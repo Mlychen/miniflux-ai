@@ -2,6 +2,32 @@
 
 All notable changes to this project will be documented in this file.
 
+## 2026-03-01
+
+### Added
+
+- Durable task observability and ops endpoints:
+  - `GET /miniflux-ai/user/tasks`
+  - `GET /miniflux-ai/user/tasks/<task_id>`
+  - `GET /miniflux-ai/user/tasks/metrics`
+  - `GET /miniflux-ai/user/tasks/failure-groups`
+  - `GET /miniflux-ai/user/tasks/failure-groups/tasks`
+  - `POST /miniflux-ai/user/tasks/failure-groups/requeue`
+  - `POST /miniflux-ai/user/tasks/<task_id>/requeue`
+  - `POST /miniflux-ai/user/tasks/requeue`
+- SQLite task schema support for normalized `error_key` grouping.
+- Minimal Debug UI task-ops panel:
+  - failure group query
+  - failed task sample query
+  - task detail query by `task_id`
+  - filter-based requeue
+  - group/task requeue actions
+
+### Changed
+
+- Webhook main path is durable-task only; no fallback to in-memory queue or sync processing.
+- Documentation refreshed for task-state architecture and debug workflow.
+
 ## 2026-02-26
 
 ### Added

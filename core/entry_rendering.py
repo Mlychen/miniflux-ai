@@ -2,12 +2,15 @@ import markdown
 
 
 def build_summary_entry(entry, response_content):
+    feed = entry.get('feed') or {}
+    category = feed.get('category') or {}
+    dt = entry.get('created_at') or entry.get('published_at') or entry.get('date') or ''
     return {
-        'datetime': entry['created_at'],
-        'category': entry['feed']['category']['title'],
-        'title': entry['title'],
+        'datetime': dt,
+        'category': category.get('title') or '',
+        'title': entry.get('title') or '',
         'content': response_content,
-        'url': entry['url'],
+        'url': entry.get('url') or '',
     }
 
 

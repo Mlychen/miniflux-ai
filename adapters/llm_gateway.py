@@ -1,8 +1,16 @@
 from markdownify import markdownify as md
 
-from openai import OpenAI
-from google import genai
-from google.genai import types
+try:
+    from openai import OpenAI
+except Exception:
+    OpenAI = None
+
+try:
+    from google import genai
+    from google.genai import types
+except Exception:
+    genai = None
+    types = None
 
 
 class LLMGateway:
@@ -10,11 +18,19 @@ class LLMGateway:
         self._config = config
         self._provider = config.llm_provider or 'openai'
         if self._provider == 'gemini':
+            if genai is None or types is None:
+                raise RuntimeError(
+                    "Gemini provider requires package `google-genai` to be installed correctly."
+                )
             self._client = genai.Client(
                 http_options=types.HttpOptions(base_url=config.llm_base_url),
                 api_key=config.llm_api_key,
             )
         else:
+            if OpenAI is None:
+                raise RuntimeError(
+                    "OpenAI provider requires package `openai` with `OpenAI` client export."
+                )
             self._client = OpenAI(base_url=config.llm_base_url, api_key=config.llm_api_key)
 
     def get_result(self, prompt: str, request: str, logger=None):

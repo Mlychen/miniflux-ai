@@ -35,6 +35,7 @@
 - failed-entries 表格 + reset 按钮
 - metrics 面板
 - clear/reset 操作区
+- tasks failure-groups 面板（分组查询/任务样本/重入队）
 - 请求与响应展示区（URL、状态码、耗时、原始 JSON）
 
 可独立并行：只需知道接口路径与返回结构（见 [10-ui.md](./10-ui.md)、[30-backend.md](./30-backend.md)）。
@@ -51,10 +52,15 @@
 
 交付物：
 - 确保以下接口稳定：
-  - `POST /miniflux-ai/manual-process`
-  - `GET /miniflux-ai/user/llm-pool/metrics`
-  - `GET /miniflux-ai/user/llm-pool/failed-entries`
-  - `POST /miniflux-ai/user/llm-pool/clear`
+- `POST /miniflux-ai/manual-process`
+- `GET /miniflux-ai/user/llm-pool/metrics`
+- `GET /miniflux-ai/user/llm-pool/failed-entries`
+- `POST /miniflux-ai/user/llm-pool/clear`
+- `GET /miniflux-ai/user/tasks/<task_id>`
+- `GET /miniflux-ai/user/tasks/failure-groups`
+- `GET /miniflux-ai/user/tasks/failure-groups/tasks`
+- `POST /miniflux-ai/user/tasks/failure-groups/requeue`
+- `POST /miniflux-ai/user/tasks/<task_id>/requeue`
 
 可选增强：
 - 增加 debug 日志/trace_id
@@ -73,5 +79,6 @@
 
 1. Block B：先把同源入口跑通（/miniflux-ai/ 可达），解决 404/跨域根因
 2. Block A：实现 Debug UI MVP（三个 GET + 一个 POST）
+   - 追加任务排障 MVP（失败分组 + 重入队）
 3. Block D：补齐局域网访问安全
 4. Block C：按调试需求逐步增强后端接口与日志

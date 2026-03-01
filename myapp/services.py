@@ -2,8 +2,6 @@ from dataclasses import dataclass
 from typing import Any, Callable
 
 from adapters.protocols import LLMGatewayProtocol, MinifluxGatewayProtocol
-from common.ai_news_repository import AiNewsRepository
-from common.entries_repository import EntriesRepository
 
 
 @dataclass(frozen=True)
@@ -13,8 +11,9 @@ class AppServices:
     llm_client: LLMGatewayProtocol
     logger: Any
     entry_processor: Callable[..., Any]
-    entries_repository: EntriesRepository
-    ai_news_repository: AiNewsRepository
+    entries_repository: Any
+    ai_news_repository: Any
+    task_store: Any = None
 
 
 def get_app_services(app) -> AppServices:

@@ -11,8 +11,25 @@ class Config:
         self.miniflux_webhook_secret = self.get_config_value('miniflux', 'webhook_secret', None)
         self.miniflux_schedule_interval = self.get_config_value('miniflux', 'schedule_interval', None)
         self.miniflux_entry_mode = self.get_config_value('miniflux', 'entry_mode', 'auto')
-        self.miniflux_webhook_queue_max_size = self.get_config_value('miniflux', 'webhook_queue_max_size', 1000)
-        self.miniflux_webhook_queue_workers = self.get_config_value('miniflux', 'webhook_queue_workers', 2)
+        self.miniflux_task_store_enabled = self.get_config_value('miniflux', 'task_store_enabled', True)
+        self.miniflux_task_workers = self.get_config_value(
+            'miniflux', 'task_workers', 2
+        )
+        self.miniflux_task_claim_batch_size = self.get_config_value(
+            'miniflux', 'task_claim_batch_size', 20
+        )
+        self.miniflux_task_lease_seconds = self.get_config_value(
+            'miniflux', 'task_lease_seconds', 60
+        )
+        self.miniflux_task_poll_interval = self.get_config_value(
+            'miniflux', 'task_poll_interval', 1.0
+        )
+        self.miniflux_task_retry_delay_seconds = self.get_config_value(
+            'miniflux', 'task_retry_delay_seconds', 30
+        )
+        self.miniflux_task_max_attempts = self.get_config_value(
+            'miniflux', 'task_max_attempts', 5
+        )
         self.miniflux_dedup_marker = self.get_config_value('miniflux', 'dedup_marker', '<!-- miniflux-ai:processed -->')
 
         self.llm_provider = self.get_config_value('llm', 'provider', 'openai')
@@ -31,6 +48,7 @@ class Config:
         self.ai_news_url = self.get_config_value('ai_news', 'url', None)
         self.ai_news_schedule = self.get_config_value('ai_news', 'schedule', None)
         self.ai_news_prompts = self.get_config_value('ai_news', 'prompts', None)
+        self.preprocess_prompt = self.c.get('preprocess_prompt')
 
         self.agents = self.c.get('agents', {})
 

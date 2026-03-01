@@ -19,9 +19,7 @@ trace_logger = get_process_logger()
 
 
 class ProcessedNewsIds(Protocol):
-    def seen(self, canonical_id: str) -> bool: ...
-
-    def mark(self, canonical_id: str) -> None: ...
+    def try_mark(self, canonical_id: str) -> bool: ...
 
 
 class InMemoryProcessedNewsIds:
@@ -29,13 +27,12 @@ class InMemoryProcessedNewsIds:
         self._ids = set()
         self._lock = threading.Lock()
 
-    def seen(self, canonical_id: str) -> bool:
+    def try_mark(self, canonical_id: str) -> bool:
         with self._lock:
-            return canonical_id in self._ids
-
-    def mark(self, canonical_id: str) -> None:
-        with self._lock:
+            if canonical_id in self._ids:
+                return False
             self._ids.add(canonical_id)
+            return True
 
 
 DEFAULT_PREPROCESS_PROMPT = """You are a helpful assistant.
@@ -292,7 +289,20 @@ def process_entry(
             f"Skipping entry {entry_id} - already processed (dedup marker found)"
         )
         _trace_log(trace_id, entry_id, "dedup", "check", status="skipped", data={"reason": "dedup_marker_found"})
-        _trace_log(trace_id, entry_id, "process", "complete", status="skipped", duration_ms=int((time.time() - start_time) * 1000))
+        _trace_log(
+            trace_id,
+            entry_id,
+            "process",
+            "complete",
+            status="skipped",
+            duration_ms=int((time.time() - start_time) * 1000),
+            data={
+                "canonical_id": canonical_id,
+                "agents_processed": 0,
+                "agent_details": [],
+                "reason": "dedup_marker_found",
+            },
+        )
         return
 
     if processed_entries_repository is not None:
@@ -308,7 +318,20 @@ def process_entry(
                 status="skipped",
                 data={"reason": "processed_repository_found", "canonical_id": canonical_id},
             )
-            _trace_log(trace_id, entry_id, "process", "complete", status="skipped", duration_ms=int((time.time() - start_time) * 1000))
+            _trace_log(
+                trace_id,
+                entry_id,
+                "process",
+                "complete",
+                status="skipped",
+                duration_ms=int((time.time() - start_time) * 1000),
+                data={
+                    "canonical_id": canonical_id,
+                    "agents_processed": 0,
+                    "agent_details": [],
+                    "reason": "processed_repository_found",
+                },
+            )
             return
 
     agents_items = list(config.agents.items())
@@ -389,36 +412,64 @@ def process_entry(
         raise RuntimeError("entries_repository must be provided")
     active_entries_repository = entries_repository
 
+    matched_agents = 0
     agents_processed = 0
     agent_details = []
+    agent_errors = []
 
     for agent in config.agents.items():
         agent_start = time.time()
         agent_name = agent[0]
         
         if filter_entry(config, agent, entry):
+            matched_agents += 1
             _trace_log(trace_id, entry_id, "agent_process", "start", data={"agent": agent_name})
 
             if agent_name == "summary":
-                if not summary_text:
+                if summary_text:
+                    response_content = summary_text
                     _trace_log(
                         trace_id,
                         entry_id,
                         "agent_process",
-                        "skipped",
-                        status="skipped",
-                        data={"agent": agent_name, "reason": "preprocess_summary_missing"},
+                        "llm_call_skipped",
+                        status="success",
+                        data={"agent": agent_name, "reason": "use_preprocess_summary"},
                     )
-                    continue
-                response_content = summary_text
-                _trace_log(
-                    trace_id,
-                    entry_id,
-                    "agent_process",
-                    "llm_call_skipped",
-                    status="success",
-                    data={"agent": agent_name, "reason": "use_preprocess_summary"},
-                )
+                else:
+                    agent_prompt = agent[1]["prompt"]
+                    agent_input = entry["content"]
+                    _trace_log(trace_id, entry_id, "agent_process", "llm_call_start", data={
+                        "agent": agent_name,
+                        "prompt_template": agent_prompt,
+                        "input_text": agent_input,
+                        "reason": "preprocess_summary_missing_fallback_to_agent_prompt",
+                    })
+                    try:
+                        response_content = _call_llm_with_entry_options(
+                            llm_client,
+                            agent_prompt,
+                            agent_input,
+                            logger,
+                            entry_key=f"{canonical_id}:{agent_name}",
+                            expected_retries=request_expected_retries,
+                            ttl_seconds=request_ttl_seconds,
+                        )
+                    except Exception as e:
+                        logger.error(
+                            f"Error processing entry {entry['id']} with agent {agent_name}: {e}"
+                        )
+                        agent_errors.append({"agent": agent_name, "error": str(e)})
+                        _trace_log(
+                            trace_id,
+                            entry_id,
+                            "agent_process",
+                            "error",
+                            status="error",
+                            duration_ms=int((time.time() - agent_start) * 1000),
+                            data={"agent": agent_name, "error": str(e)},
+                        )
+                        continue
             else:
                 agent_prompt = agent[1]["prompt"]
                 agent_input = entry["content"]
@@ -442,9 +493,23 @@ def process_entry(
                     logger.error(
                         f"Error processing entry {entry['id']} with agent {agent_name}: {e}"
                     )
+                    agent_errors.append({"agent": agent_name, "error": str(e)})
                     _trace_log(trace_id, entry_id, "agent_process", "error", status="error", duration_ms=int((time.time() - agent_start) * 1000), data={"agent": agent_name, "error": str(e)})
                     continue
-            
+
+            if not (response_content or "").strip():
+                agent_errors.append({"agent": agent_name, "error": "empty_response"})
+                _trace_log(
+                    trace_id,
+                    entry_id,
+                    "agent_process",
+                    "error",
+                    status="error",
+                    duration_ms=int((time.time() - agent_start) * 1000),
+                    data={"agent": agent_name, "error": "empty_response"},
+                )
+                continue
+             
             agent_duration = int((time.time() - agent_start) * 1000)
             log_content = (
                 (response_content or "")[:20] + "..."
@@ -490,47 +555,84 @@ def process_entry(
         else:
              _trace_log(trace_id, entry_id, "agent_process", "skipped", status="skipped", data={"agent": agent_name, "reason": "filter_mismatch"})
 
-    if len(llm_result) > 0:
-        update_start = time.time()
-        _trace_log(trace_id, entry_id, "update_miniflux", "start")
-        new_content = llm_result + entry["content"]
-        if dedup_marker:
-            new_content = new_content + "\n" + dedup_marker
-        try:
-            miniflux_client.update_entry(entry["id"], content=new_content)
-        except Exception as e:
-            _trace_log(
-                trace_id,
-                entry_id,
-                "update_miniflux",
-                "error",
-                status="error",
-                duration_ms=int((time.time() - update_start) * 1000),
-                data={"error": str(e)},
-            )
-            raise
+    if matched_agents > 0 and agents_processed == 0:
+        error_summary = {
+            "canonical_id": canonical_id,
+            "agents_processed": agents_processed,
+            "agent_details": agent_details,
+            "agent_errors": agent_errors,
+            "reason": "all_matched_agents_failed",
+        }
+        _trace_log(
+            trace_id,
+            entry_id,
+            "process",
+            "complete",
+            status="error",
+            duration_ms=int((time.time() - start_time) * 1000),
+            data=error_summary,
+        )
+        raise RuntimeError(
+            f"process_entry failed: all matched agents failed entry_id={entry_id} canonical_id={canonical_id}"
+        )
+
+    if len(llm_result) <= 0:
+        error_summary = {
+            "canonical_id": canonical_id,
+            "agents_processed": agents_processed,
+            "agent_details": agent_details,
+            "reason": "empty_rendered_result",
+        }
+        _trace_log(
+            trace_id,
+            entry_id,
+            "process",
+            "complete",
+            status="error",
+            duration_ms=int((time.time() - start_time) * 1000),
+            data=error_summary,
+        )
+        raise RuntimeError(
+            f"process_entry failed: empty rendered result entry_id={entry_id} canonical_id={canonical_id}"
+        )
+
+    update_start = time.time()
+    _trace_log(trace_id, entry_id, "update_miniflux", "start")
+    new_content = llm_result + entry["content"]
+    if dedup_marker:
+        new_content = new_content + "\n" + dedup_marker
+    try:
+        miniflux_client.update_entry(entry["id"], content=new_content)
+    except Exception as e:
         _trace_log(
             trace_id,
             entry_id,
             "update_miniflux",
-            "complete",
-            status="success",
+            "error",
+            status="error",
             duration_ms=int((time.time() - update_start) * 1000),
-            data={
-                "content_length": len(new_content),
-                "summary_length": len(summary_text or ""),
-            },
+            data={"error": str(e)},
+        )
+        raise
+    _trace_log(
+        trace_id,
+        entry_id,
+        "update_miniflux",
+        "complete",
+        status="success",
+        duration_ms=int((time.time() - update_start) * 1000),
+        data={
+            "content_length": len(new_content),
+            "summary_length": len(summary_text or ""),
+        },
+    )
+
+    if logger and hasattr(logger, "debug"):
+        logger.debug(
+            f"process_entry: updated entry {entry_id} with dedup_marker={bool(dedup_marker)}"
         )
 
-        if logger and hasattr(logger, "debug"):
-            logger.debug(
-                f"process_entry: updated entry {entry_id} with dedup_marker={bool(dedup_marker)}"
-            )
-
-        _mark_processed("updated_miniflux")
-             
-    if not marked_processed:
-        _mark_processed("flow_completed")
+    _mark_processed("updated_miniflux")
 
     _trace_log(trace_id, entry_id, "process", "complete", status="success", duration_ms=int((time.time() - start_time) * 1000), data={"canonical_id": canonical_id, "agents_processed": agents_processed, "agent_details": agent_details, "ai_category": ai_category})
 
@@ -546,13 +648,25 @@ def build_rate_limited_processor(
     def _processor(miniflux_client, entry, llm_client, logger):
         if processed_news_ids is not None:
             canonical_id = make_canonical_id(entry.get("url"), entry.get("title"))
-            if processed_news_ids.seen(canonical_id):
+            if not processed_news_ids.try_mark(canonical_id):
+                trace_id = entry.get("_trace_id") or uuid.uuid4().hex
+                entry_id = str(entry.get("id") or "")
+                _trace_log(
+                    trace_id,
+                    entry_id,
+                    "dedup",
+                    "cache_hit",
+                    status="warning",
+                    data={
+                        "reason": "in_memory_duplicate_cache_hit",
+                        "canonical_id": canonical_id,
+                        "enforced_by": "processed_repository",
+                    },
+                )
                 if logger and hasattr(logger, "debug"):
                     logger.debug(
-                        f"process_entry: skip_duplicate canonical_id={canonical_id} url={entry.get('url')} title={entry.get('title')}"
+                        f"process_entry: cache_hit canonical_id={canonical_id} url={entry.get('url')} title={entry.get('title')}"
                     )
-                return
-            processed_news_ids.mark(canonical_id)
         return process_entry(
             miniflux_client,
             entry,

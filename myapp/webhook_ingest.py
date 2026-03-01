@@ -1,8 +1,9 @@
 from flask import request, abort, jsonify, current_app
 import hmac
 import hashlib
+import uuid
 
-from core.process_entries_batch import process_entries_batch
+from core.process_entries import make_canonical_id
 from myapp.services import get_app_services
 
 
@@ -12,9 +13,6 @@ def register_webhook_routes(app):
         services = get_app_services(current_app)
         config = services.config
         logger = services.logger
-        miniflux_client = services.miniflux_client
-        llm_client = services.llm_client
-        entry_processor = services.entry_processor
         webhook_secret = config.miniflux_webhook_secret
 
         payload = request.get_data()
@@ -35,6 +33,15 @@ def register_webhook_routes(app):
 
         data = request.json or {}
         event_type = data.get("event_type")
+        incoming_trace_id = request.headers.get("X-Trace-Id")
+        payload_trace_id = data.get("trace_id")
+        trace_id = ""
+        if incoming_trace_id is not None:
+            trace_id = str(incoming_trace_id).strip()
+        if not trace_id and payload_trace_id is not None:
+            trace_id = str(payload_trace_id).strip()
+        if not trace_id:
+            trace_id = uuid.uuid4().hex
 
         if event_type == "save_entry":
             if logger:
@@ -61,41 +68,49 @@ def register_webhook_routes(app):
                 f"webhook: batch_entries_count={len(batch_entries)} feed_site={feed.get('site_url')}"
             )
 
-        # Check if webhook queue is configured
-        webhook_queue = current_app.config.get("WEBHOOK_QUEUE")
-        if webhook_queue:
-            task = {
-                "entries": batch_entries,
-                "feed": feed,
-            }
-            success = webhook_queue.enqueue(task)
-            if not success:
-                logger.warning("Webhook queue is full, rejecting request")
-                return jsonify({"status": "error", "message": "queue full"}), 503
-            logger.info(
-                f"Enqueued {len(batch_entries)} entries to webhook queue (size: {webhook_queue.size()})"
-            )
-            if logger and hasattr(logger, "debug"):
-                logger.debug(
-                    f"webhook: enqueue_success queue_size={webhook_queue.size()} task_entries={len(batch_entries)}"
+        task_store = current_app.config.get("TASK_STORE")
+        if task_store is None:
+            if logger:
+                logger.error("Webhook task store is not configured")
+            return jsonify({"status": "error", "message": "task store not configured"}), 500
+
+        accepted = 0
+        duplicates = 0
+        max_attempts = int(getattr(config, "miniflux_task_max_attempts", 5))
+        for entry in batch_entries:
+            canonical_id = make_canonical_id(entry.get("url"), entry.get("title"))
+            payload = {"entry": entry, "feed": feed}
+            try:
+                created = task_store.create_task(
+                    canonical_id=canonical_id,
+                    payload=payload,
+                    trace_id=trace_id,
+                    max_attempts=max_attempts,
                 )
-            return jsonify({"status": "accepted"}), 202
+            except Exception as e:
+                if logger:
+                    logger.error(f"Webhook task persistence failed: {e}")
+                return (
+                    jsonify({"status": "error", "message": "task persistence failed"}),
+                    500,
+                )
+            if created:
+                accepted += 1
+            else:
+                duplicates += 1
 
-        # No queue - process synchronously (legacy behavior)
-        result = process_entries_batch(
-            config,
-            batch_entries,
-            miniflux_client,
-            entry_processor,
-            llm_client,
-            logger,
-        )
-        if result["failures"] > 0:
-            return jsonify({"status": "error"}), 500
-
-        if logger and hasattr(logger, "debug"):
-            logger.debug(
-                f"webhook: sync_processing_done total={result['total']} failures={result['failures']}"
+        if logger:
+            logger.info(
+                f"Webhook tasks persisted accepted={accepted} duplicates={duplicates} trace_id={trace_id}"
             )
-
-        return jsonify({"status": "ok"})
+        return (
+            jsonify(
+                {
+                    "status": "accepted",
+                    "accepted": accepted,
+                    "duplicates": duplicates,
+                    "trace_id": trace_id,
+                }
+            ),
+            202,
+        )

@@ -738,6 +738,12 @@
               <input class="input" id="traceEntryId" type="text" placeholder="UUID hex 或 Entry ID" style="min-width: 250px;" />
               <button class="btn btn-primary" id="btnTrace">查询</button>
               <button class="btn" id="btnClearTrace">清空</button>
+              <button class="btn" id="btnBackToTraceList" style="display: none;">
+                <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
+                  <path fill-rule="evenodd" d="M12 8a.5.5 0 0 1-.5.5H5.707l2.147 2.146a.5.5 0 0 1-.708.708l-3-3a.5.5 0 0 1 0-.708l3-3a.5.5 0 1 1 .708.708L5.707 7.5H11.5a.5.5 0 0 1 .5.5z"/>
+                </svg>
+                返回列表
+              </button>
             </div>
             <!-- 追踪列表 -->
             <div id="traceList" style="display: none; margin-top: var(--space-md);">
@@ -918,11 +924,12 @@
                     <th>类别</th>
                     <th>发布时间</th>
                     <th>URL</th>
+                    <th>操作</th>
                   </tr>
                 </thead>
                 <tbody id="processedBody">
                   <tr>
-                    <td colspan="7" class="empty-state">
+                    <td colspan="8" class="empty-state">
                       <div class="empty-state-icon">📭</div>
                       <div class="empty-state-text">点击"加载"按钮查看已处理条目</div>
                     </td>
@@ -931,6 +938,128 @@
               </table>
             </div>
             <pre class="code-block mono" id="outProcessed" style="border-top: none; border-radius: 0 0 var(--radius-md) var(--radius-md);"></pre>
+          </div>
+        </div>
+
+        <!-- 任务排障卡片 -->
+        <div class="card full">
+          <div class="card-header">
+            <div class="card-title">
+              <svg class="card-icon" viewBox="0 0 16 16" fill="currentColor">
+                <path d="M7.48 1.677a.75.75 0 011.04 0l6.25 5.75a.75.75 0 01.033 1.072l-6 6.5a.75.75 0 01-1.096 0l-6-6.5a.75.75 0 01.033-1.072l6.25-5.75zM8 3.249L3.307 7.57 8 12.653l4.693-5.083L8 3.249z"/>
+              </svg>
+              任务排障
+            </div>
+            <div class="input-group">
+              <label class="input-label" for="taskStatusFilter">状态</label>
+              <select class="input" id="taskStatusFilter" style="width: 120px;">
+                <option value="">全部失败</option>
+                <option value="retryable">retryable</option>
+                <option value="dead">dead</option>
+              </select>
+              <label class="input-label" for="taskErrorFilter">错误筛选</label>
+              <input class="input" id="taskErrorFilter" type="text" placeholder="error 或 error_key" style="min-width: 220px;" />
+              <label class="input-label" for="taskGroupLimit">Limit</label>
+              <input class="input" id="taskGroupLimit" type="text" inputmode="numeric" value="50" style="width: 80px;" />
+              <button class="btn btn-primary" id="btnTaskGroupsLoad">加载分组</button>
+              <button class="btn" id="btnTaskFilterRequeue">按筛选重入队</button>
+              <button class="btn btn-danger" id="btnTaskGroupRequeue">重入队当前分组</button>
+            </div>
+          </div>
+          <div class="card-body" style="padding: 0;">
+            <div style="padding: var(--space-md); border-bottom: 1px solid var(--border-secondary);">
+              <div class="stats-row">
+                <div class="stat">
+                  <span class="stat-label">分组总数</span>
+                  <span class="stat-value" id="taskGroupsTotal">0</span>
+                </div>
+                <div class="stat">
+                  <span class="stat-label">当前返回</span>
+                  <span class="stat-value" id="taskGroupsCount">0</span>
+                </div>
+                <div class="stat">
+                  <span class="stat-label">当前分组</span>
+                  <span class="stat-value mono" id="taskCurrentGroup">(none)</span>
+                </div>
+              </div>
+            </div>
+            <div class="table-container">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Status</th>
+                    <th>Error Key</th>
+                    <th>Example Error</th>
+                    <th>Count</th>
+                    <th>Latest Updated</th>
+                    <th>Oldest Created</th>
+                    <th>操作</th>
+                  </tr>
+                </thead>
+                <tbody id="taskGroupsBody">
+                  <tr>
+                    <td colspan="7" class="empty-state">
+                      <div class="empty-state-icon">🧭</div>
+                      <div class="empty-state-text">点击"加载分组"查看失败分组</div>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            <div style="padding: var(--space-md); border-top: 1px solid var(--border-secondary); border-bottom: 1px solid var(--border-secondary);">
+              <div class="input-group">
+                <label class="input-label" for="taskSampleLimit">样本 Limit</label>
+                <input class="input" id="taskSampleLimit" type="text" inputmode="numeric" value="20" style="width: 80px;" />
+                <label class="input-label" for="taskSampleOffset">Offset</label>
+                <input class="input" id="taskSampleOffset" type="text" inputmode="numeric" value="0" style="width: 80px;" />
+                <label class="input-label" for="taskSampleIncludePayload" style="display:flex; align-items:center; gap:6px;">
+                  <input id="taskSampleIncludePayload" type="checkbox" />
+                  包含 payload
+                </label>
+                <button class="btn" id="btnTaskSamplesLoad">加载任务样本</button>
+                <span class="stat">
+                  <span class="stat-label">任务总数</span>
+                  <span class="stat-value" id="taskSamplesTotal">0</span>
+                </span>
+                <span class="stat">
+                  <span class="stat-label">当前返回</span>
+                  <span class="stat-value" id="taskSamplesCount">0</span>
+                </span>
+              </div>
+            </div>
+
+            <div class="table-container">
+              <table>
+                <thead>
+                  <tr>
+                    <th>ID</th>
+                    <th>Status</th>
+                    <th>Attempts</th>
+                    <th>Error Key</th>
+                    <th>Trace ID</th>
+                    <th>Updated</th>
+                    <th>操作</th>
+                  </tr>
+                </thead>
+                <tbody id="taskSamplesBody">
+                  <tr>
+                    <td colspan="7" class="empty-state">
+                      <div class="empty-state-icon">📋</div>
+                      <div class="empty-state-text">先选择失败分组，再加载任务样本</div>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <div style="padding: var(--space-md); border-top: 1px solid var(--border-secondary);">
+              <div class="input-group">
+                <label class="input-label" for="taskDetailId">Task ID</label>
+                <input class="input" id="taskDetailId" type="text" inputmode="numeric" placeholder="例如 123" style="width: 120px;" />
+                <button class="btn" id="btnTaskDetailLoad">查看任务详情</button>
+              </div>
+            </div>
+            <pre class="code-block mono" id="outTaskOps" style="border-top: none; border-radius: 0 0 var(--radius-md) var(--radius-md);"></pre>
           </div>
         </div>
 
@@ -1262,7 +1391,19 @@
                   });
               };
             })(it.entry_key));
+            
+            const traceBtn = document.createElement('button');
+            traceBtn.className = 'btn';
+            traceBtn.textContent = 'Trace';
+            traceBtn.style.marginLeft = '4px';
+            traceBtn.addEventListener('click', function () {
+              traceEntryId.value = it.entry_key || '';
+              loadProcessTrace();
+              document.querySelector('.card:nth-child(2)').scrollIntoView({ behavior: 'smooth' });
+            });
+
             tdOp.appendChild(reset);
+            tdOp.appendChild(traceBtn);
             tr.appendChild(tdOp);
 
             failedBody.appendChild(tr);
@@ -1340,7 +1481,7 @@
           if (!entries || entries.length === 0) {
             processedBody.innerHTML = `
               <tr>
-                <td colspan="7" class="empty-state">
+                <td colspan="8" class="empty-state">
                   <div class="empty-state-icon">📭</div>
                   <div class="empty-state-text">暂无已处理条目</div>
                 </td>
@@ -1411,6 +1552,21 @@
             }
             tr.appendChild(tdUrl);
 
+            // Actions
+            const tdOp = document.createElement('td');
+            const traceBtn = document.createElement('button');
+            traceBtn.className = 'btn';
+            traceBtn.textContent = 'Trace';
+            traceBtn.style.padding = '2px 8px';
+            traceBtn.style.fontSize = '11px';
+            traceBtn.addEventListener('click', function () {
+              traceEntryId.value = it.id || '';
+              loadProcessTrace();
+              document.querySelector('.card:nth-child(2)').scrollIntoView({ behavior: 'smooth' });
+            });
+            tdOp.appendChild(traceBtn);
+            tr.appendChild(tdOp);
+
             processedBody.appendChild(tr);
           });
         }
@@ -1456,10 +1612,478 @@
         btnProcessed.addEventListener('click', loadProcessedEntries);
         btnRefreshProcessed.addEventListener('click', loadProcessedEntries);
 
+        // ========== 任务排障 ==========
+        const btnTaskGroupsLoad = document.getElementById('btnTaskGroupsLoad');
+        const btnTaskFilterRequeue = document.getElementById('btnTaskFilterRequeue');
+        const btnTaskGroupRequeue = document.getElementById('btnTaskGroupRequeue');
+        const btnTaskSamplesLoad = document.getElementById('btnTaskSamplesLoad');
+        const btnTaskDetailLoad = document.getElementById('btnTaskDetailLoad');
+        const outTaskOps = document.getElementById('outTaskOps');
+        const taskStatusFilter = document.getElementById('taskStatusFilter');
+        const taskErrorFilter = document.getElementById('taskErrorFilter');
+        const taskGroupLimit = document.getElementById('taskGroupLimit');
+        const taskGroupsBody = document.getElementById('taskGroupsBody');
+        const taskGroupsTotal = document.getElementById('taskGroupsTotal');
+        const taskGroupsCount = document.getElementById('taskGroupsCount');
+        const taskCurrentGroup = document.getElementById('taskCurrentGroup');
+        const taskSampleLimit = document.getElementById('taskSampleLimit');
+        const taskSampleOffset = document.getElementById('taskSampleOffset');
+        const taskSampleIncludePayload = document.getElementById('taskSampleIncludePayload');
+        const taskSamplesBody = document.getElementById('taskSamplesBody');
+        const taskSamplesTotal = document.getElementById('taskSamplesTotal');
+        const taskSamplesCount = document.getElementById('taskSamplesCount');
+        const taskDetailId = document.getElementById('taskDetailId');
+
+        let selectedFailureGroup = null;
+
+        function parsePositiveInt(raw, fallback) {
+          const n = parseInt((raw || '').trim(), 10);
+          return Number.isFinite(n) && n > 0 ? n : fallback;
+        }
+
+        function formatUnixSeconds(v) {
+          if (v === null || v === undefined || v === '') {
+            return '-';
+          }
+          const n = Number(v);
+          if (!Number.isFinite(n) || n <= 0) {
+            return '-';
+          }
+          return new Date(n * 1000).toLocaleString('zh-CN');
+        }
+
+        function escapeHtml(value) {
+          return String(value || '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+        }
+
+        function getTaskStatusBadge(status) {
+          if (status === 'retryable') {
+            return '<span class="badge badge-warning">retryable</span>';
+          }
+          if (status === 'dead') {
+            return '<span class="badge badge-error">dead</span>';
+          }
+          if (status === 'running') {
+            return '<span class="badge badge-info">running</span>';
+          }
+          if (status === 'done') {
+            return '<span class="badge badge-success">done</span>';
+          }
+          return `<span class="badge badge-info">${escapeHtml(status || 'unknown')}</span>`;
+        }
+
+        function updateCurrentFailureGroupDisplay() {
+          if (!selectedFailureGroup) {
+            taskCurrentGroup.textContent = '(none)';
+            return;
+          }
+          taskCurrentGroup.textContent = `${selectedFailureGroup.status}/${selectedFailureGroup.error_key}`;
+        }
+
+        function buildFailureGroupQueryFromFilters(limitVal, offsetVal) {
+          const params = new URLSearchParams();
+          params.set('limit', String(limitVal));
+          params.set('offset', String(offsetVal));
+
+          const status = (taskStatusFilter.value || '').trim();
+          if (status) {
+            params.set('status', status);
+          }
+
+          const error = (taskErrorFilter.value || '').trim();
+          if (error) {
+            params.set('error', error);
+          }
+          return params;
+        }
+
+        function renderFailureGroupRows(groups) {
+          taskGroupsBody.innerHTML = '';
+          if (!groups || groups.length === 0) {
+            taskGroupsBody.innerHTML = `
+              <tr>
+                <td colspan="7" class="empty-state">
+                  <div class="empty-state-icon">✅</div>
+                  <div class="empty-state-text">暂无失败分组</div>
+                </td>
+              </tr>
+            `;
+            return;
+          }
+
+          groups.forEach(function (group) {
+            const tr = document.createElement('tr');
+
+            const tdStatus = document.createElement('td');
+            tdStatus.innerHTML = getTaskStatusBadge(group.status);
+            tr.appendChild(tdStatus);
+
+            const tdErrorKey = document.createElement('td');
+            tdErrorKey.className = 'mono';
+            tdErrorKey.style.fontSize = '11px';
+            tdErrorKey.textContent = group.error_key || '(empty)';
+            tr.appendChild(tdErrorKey);
+
+            const tdError = document.createElement('td');
+            tdError.textContent = group.error || '-';
+            tdError.title = group.error || '';
+            tdError.style.maxWidth = '360px';
+            tdError.style.wordBreak = 'break-word';
+            tr.appendChild(tdError);
+
+            const tdCount = document.createElement('td');
+            tdCount.className = 'mono';
+            tdCount.textContent = String(group.count || 0);
+            tr.appendChild(tdCount);
+
+            const tdUpdated = document.createElement('td');
+            tdUpdated.textContent = formatUnixSeconds(group.latest_updated_at);
+            tr.appendChild(tdUpdated);
+
+            const tdCreated = document.createElement('td');
+            tdCreated.textContent = formatUnixSeconds(group.oldest_created_at);
+            tr.appendChild(tdCreated);
+
+            const tdOps = document.createElement('td');
+            const viewBtn = document.createElement('button');
+            viewBtn.className = 'btn';
+            viewBtn.textContent = '查看任务';
+            viewBtn.addEventListener('click', function () {
+              selectedFailureGroup = {
+                status: String(group.status || ''),
+                error_key: String(group.error_key || '(empty)'),
+              };
+              updateCurrentFailureGroupDisplay();
+              taskSampleOffset.value = '0';
+              loadFailureGroupTasks();
+            });
+
+            const requeueBtn = document.createElement('button');
+            requeueBtn.className = 'btn btn-danger';
+            requeueBtn.textContent = '重入队该组';
+            requeueBtn.style.marginLeft = '4px';
+            requeueBtn.addEventListener('click', function () {
+              requeueFailureGroup({
+                status: String(group.status || ''),
+                error_key: String(group.error_key || '(empty)'),
+              });
+            });
+
+            tdOps.appendChild(viewBtn);
+            tdOps.appendChild(requeueBtn);
+            tr.appendChild(tdOps);
+
+            taskGroupsBody.appendChild(tr);
+          });
+        }
+
+        function renderFailureTasksRows(tasks) {
+          taskSamplesBody.innerHTML = '';
+          if (!tasks || tasks.length === 0) {
+            taskSamplesBody.innerHTML = `
+              <tr>
+                <td colspan="7" class="empty-state">
+                  <div class="empty-state-icon">📭</div>
+                  <div class="empty-state-text">该分组下暂无任务</div>
+                </td>
+              </tr>
+            `;
+            return;
+          }
+
+          tasks.forEach(function (task) {
+            const tr = document.createElement('tr');
+
+            const tdId = document.createElement('td');
+            tdId.className = 'mono';
+            tdId.textContent = String(task.id || '');
+            tr.appendChild(tdId);
+
+            const tdStatus = document.createElement('td');
+            tdStatus.innerHTML = getTaskStatusBadge(task.status);
+            tr.appendChild(tdStatus);
+
+            const tdAttempts = document.createElement('td');
+            tdAttempts.className = 'mono';
+            tdAttempts.textContent = `${task.attempts || 0}/${task.max_attempts || '?'}`;
+            tr.appendChild(tdAttempts);
+
+            const tdErrorKey = document.createElement('td');
+            tdErrorKey.className = 'mono';
+            tdErrorKey.style.fontSize = '11px';
+            tdErrorKey.textContent = task.error_key || '(empty)';
+            tr.appendChild(tdErrorKey);
+
+            const tdTrace = document.createElement('td');
+            tdTrace.className = 'mono';
+            tdTrace.style.fontSize = '11px';
+            tdTrace.textContent = task.trace_id || '-';
+            tdTrace.title = task.trace_id || '';
+            tr.appendChild(tdTrace);
+
+            const tdUpdated = document.createElement('td');
+            tdUpdated.textContent = formatUnixSeconds(task.updated_at);
+            tr.appendChild(tdUpdated);
+
+            const tdOps = document.createElement('td');
+            const requeueBtn = document.createElement('button');
+            requeueBtn.className = 'btn';
+            requeueBtn.textContent = '重入队任务';
+            requeueBtn.addEventListener('click', function () {
+              requeueSingleTask(task.id, requeueBtn);
+            });
+            const detailBtn = document.createElement('button');
+            detailBtn.className = 'btn';
+            detailBtn.textContent = '详情';
+            detailBtn.style.marginLeft = '4px';
+            detailBtn.addEventListener('click', function () {
+              taskDetailId.value = String(task.id || '');
+              loadTaskDetail();
+            });
+            tdOps.appendChild(requeueBtn);
+            tdOps.appendChild(detailBtn);
+            tr.appendChild(tdOps);
+
+            taskSamplesBody.appendChild(tr);
+          });
+        }
+
+        function loadTaskFailureGroups() {
+          outTaskOps.textContent = '';
+          btnTaskGroupsLoad.disabled = true;
+          btnTaskGroupsLoad.textContent = '加载中...';
+
+          const limitVal = parsePositiveInt(taskGroupLimit.value, 50);
+          const previousSelection = selectedFailureGroup
+            ? `${selectedFailureGroup.status}|${selectedFailureGroup.error_key}`
+            : '';
+          const params = buildFailureGroupQueryFromFilters(limitVal, 0);
+          const url = `/miniflux-ai/user/tasks/failure-groups?${params.toString()}`;
+
+          request('GET', url)
+            .then(function (data) {
+              const groups = data.groups || [];
+              if (previousSelection) {
+                const matched = groups.find(function (item) {
+                  return `${item.status}|${item.error_key}` === previousSelection;
+                });
+                selectedFailureGroup = matched
+                  ? { status: String(matched.status), error_key: String(matched.error_key) }
+                  : null;
+              } else {
+                selectedFailureGroup = null;
+              }
+              updateCurrentFailureGroupDisplay();
+              taskGroupsTotal.textContent = String(data.total || 0);
+              taskGroupsCount.textContent = String(groups.length);
+              renderFailureGroupRows(groups);
+              outTaskOps.textContent = pretty({
+                status: data.status,
+                endpoint: 'failure-groups',
+                total: data.total,
+                returned: groups.length,
+                status_filter: data.status_filter,
+                error_key_filter: data.error_key_filter,
+              });
+            })
+            .catch(function (e) {
+              outTaskOps.textContent = pretty({ error: e.message, response: e.response || null });
+            })
+            .finally(function () {
+              btnTaskGroupsLoad.disabled = false;
+              btnTaskGroupsLoad.textContent = '加载分组';
+            });
+        }
+
+        function loadFailureGroupTasks() {
+          outTaskOps.textContent = '';
+          btnTaskSamplesLoad.disabled = true;
+          btnTaskSamplesLoad.textContent = '加载中...';
+
+          const limitVal = parsePositiveInt(taskSampleLimit.value, 20);
+          const offsetVal = parsePositiveInt(taskSampleOffset.value, 0);
+          const params = new URLSearchParams();
+          params.set('limit', String(limitVal));
+          params.set('offset', String(offsetVal));
+          params.set('include_payload', taskSampleIncludePayload.checked ? 'true' : 'false');
+
+          if (selectedFailureGroup) {
+            params.set('status', selectedFailureGroup.status);
+            params.set('error_key', selectedFailureGroup.error_key);
+          } else {
+            const status = (taskStatusFilter.value || '').trim();
+            if (status) {
+              params.set('status', status);
+            }
+            const error = (taskErrorFilter.value || '').trim();
+            if (error) {
+              params.set('error', error);
+            }
+          }
+
+          const url = `/miniflux-ai/user/tasks/failure-groups/tasks?${params.toString()}`;
+          request('GET', url)
+            .then(function (data) {
+              taskSamplesTotal.textContent = String(data.total || 0);
+              taskSamplesCount.textContent = String((data.tasks || []).length);
+              renderFailureTasksRows(data.tasks || []);
+              outTaskOps.textContent = pretty({
+                status: data.status,
+                endpoint: 'failure-groups/tasks',
+                total: data.total,
+                returned: (data.tasks || []).length,
+                status_filter: data.status_filter,
+                error_key_filter: data.error_key_filter,
+              });
+            })
+            .catch(function (e) {
+              outTaskOps.textContent = pretty({ error: e.message, response: e.response || null });
+            })
+            .finally(function () {
+              btnTaskSamplesLoad.disabled = false;
+              btnTaskSamplesLoad.textContent = '加载任务样本';
+            });
+        }
+
+        function requeueFailureGroup(group) {
+          outTaskOps.textContent = '';
+          const limitVal = parsePositiveInt(taskGroupLimit.value, 100);
+          btnTaskGroupRequeue.disabled = true;
+          btnTaskGroupRequeue.textContent = '重入队中...';
+
+          request('POST', '/miniflux-ai/user/tasks/failure-groups/requeue', {
+            status: group.status,
+            error_key: group.error_key,
+            limit: limitVal,
+          })
+            .then(function (data) {
+              outTaskOps.textContent = pretty(data);
+              selectedFailureGroup = { status: group.status, error_key: group.error_key };
+              updateCurrentFailureGroupDisplay();
+              loadTaskFailureGroups();
+              loadFailureGroupTasks();
+            })
+            .catch(function (e) {
+              outTaskOps.textContent = pretty({ error: e.message, response: e.response || null });
+            })
+            .finally(function () {
+              btnTaskGroupRequeue.disabled = false;
+              btnTaskGroupRequeue.textContent = '重入队当前分组';
+            });
+        }
+
+        function requeueByCurrentFilters() {
+          outTaskOps.textContent = '';
+          const limitVal = parsePositiveInt(taskGroupLimit.value, 100);
+          const payload = { limit: limitVal };
+
+          const status = (taskStatusFilter.value || '').trim();
+          if (status) {
+            payload.status = status;
+          }
+          const error = (taskErrorFilter.value || '').trim();
+          if (error) {
+            payload.error = error;
+          }
+
+          btnTaskFilterRequeue.disabled = true;
+          btnTaskFilterRequeue.textContent = '重入队中...';
+          request('POST', '/miniflux-ai/user/tasks/failure-groups/requeue', payload)
+            .then(function (data) {
+              outTaskOps.textContent = pretty({
+                mode: 'filter-requeue',
+                status_filter: status || null,
+                error_filter: error || null,
+                ...data,
+              });
+              selectedFailureGroup = null;
+              updateCurrentFailureGroupDisplay();
+              loadTaskFailureGroups();
+              loadFailureGroupTasks();
+            })
+            .catch(function (e) {
+              outTaskOps.textContent = pretty({ error: e.message, response: e.response || null });
+            })
+            .finally(function () {
+              btnTaskFilterRequeue.disabled = false;
+              btnTaskFilterRequeue.textContent = '按筛选重入队';
+            });
+        }
+
+        function loadTaskDetail() {
+          outTaskOps.textContent = '';
+          const rawTaskId = (taskDetailId.value || '').trim();
+          if (!rawTaskId || !/^\d+$/.test(rawTaskId)) {
+            outTaskOps.textContent = '请输入合法 task_id（正整数）';
+            return;
+          }
+
+          btnTaskDetailLoad.disabled = true;
+          btnTaskDetailLoad.textContent = '查询中...';
+          request('GET', `/miniflux-ai/user/tasks/${encodeURIComponent(rawTaskId)}`)
+            .then(function (data) {
+              outTaskOps.textContent = pretty(data);
+              const task = data.task || {};
+              if (task.status === 'retryable' || task.status === 'dead') {
+                selectedFailureGroup = {
+                  status: String(task.status),
+                  error_key: String(task.error_key || '(empty)'),
+                };
+                updateCurrentFailureGroupDisplay();
+              }
+            })
+            .catch(function (e) {
+              outTaskOps.textContent = pretty({ error: e.message, response: e.response || null });
+            })
+            .finally(function () {
+              btnTaskDetailLoad.disabled = false;
+              btnTaskDetailLoad.textContent = '查看任务详情';
+            });
+        }
+
+        function requeueSingleTask(taskId, buttonEl) {
+          outTaskOps.textContent = '';
+          buttonEl.disabled = true;
+          buttonEl.textContent = '重入队中...';
+          request('POST', `/miniflux-ai/user/tasks/${encodeURIComponent(taskId)}/requeue`, {})
+            .then(function (data) {
+              outTaskOps.textContent = pretty(data);
+              loadTaskFailureGroups();
+              loadFailureGroupTasks();
+            })
+            .catch(function (e) {
+              outTaskOps.textContent = pretty({ error: e.message, response: e.response || null });
+            })
+            .finally(function () {
+              buttonEl.disabled = false;
+              buttonEl.textContent = '重入队任务';
+            });
+        }
+
+        btnTaskGroupsLoad.addEventListener('click', loadTaskFailureGroups);
+        btnTaskSamplesLoad.addEventListener('click', loadFailureGroupTasks);
+        btnTaskFilterRequeue.addEventListener('click', requeueByCurrentFilters);
+        btnTaskDetailLoad.addEventListener('click', loadTaskDetail);
+        btnTaskGroupRequeue.addEventListener('click', function () {
+          if (!selectedFailureGroup) {
+            outTaskOps.textContent = '请先在分组表中选择一个分组。';
+            return;
+          }
+          requeueFailureGroup(selectedFailureGroup);
+        });
+
         // ========== 处理追踪 ==========
         const btnTrace = document.getElementById('btnTrace');
         const btnClearTrace = document.getElementById('btnClearTrace');
+        const btnBackToTraceList = document.getElementById('btnBackToTraceList');
         const outTrace = document.getElementById('outTrace');
+        
+        let lastEntryIdForList = null;
         const traceEntryId = document.getElementById('traceEntryId');
         const traceSummary = document.getElementById('traceSummary');
         const traceTimeline = document.getElementById('traceTimeline');
@@ -1597,6 +2221,7 @@
           traceSummary.style.display = 'none';
           traceTimeline.style.display = 'none';
           traceList.style.display = 'none';
+          btnBackToTraceList.style.display = 'none';
 
           if (!entryId) {
             outTrace.textContent = '请输入 Trace ID 或 Entry ID';
@@ -1610,10 +2235,14 @@
             .then(function (data) {
               if (data.status === 'not_found') {
                 outTrace.textContent = '未找到该 ID 的处理记录: ' + entryId;
+                if (lastEntryIdForList && entryId !== lastEntryIdForList) {
+                    btnBackToTraceList.style.display = 'inline-flex';
+                }
                 return;
               }
               
               if (data.type === 'list') {
+                  lastEntryIdForList = entryId;
                   traceListBody.innerHTML = '';
                   (data.traces || []).forEach(t => {
                       const tr = document.createElement('tr');
@@ -1657,9 +2286,17 @@
                 renderTimeline(data.stages);
                 traceTimeline.style.display = 'block';
               }
+
+              // Show back button if we navigated from a list
+              if (lastEntryIdForList && entryId !== lastEntryIdForList) {
+                  btnBackToTraceList.style.display = 'inline-flex';
+              }
             })
             .catch(function (e) {
               outTrace.textContent = pretty({ error: e.message, response: e.response || null });
+              if (lastEntryIdForList && entryId !== lastEntryIdForList) {
+                  btnBackToTraceList.style.display = 'inline-flex';
+              }
             })
             .finally(function () {
               btnTrace.disabled = false;
@@ -1669,12 +2306,21 @@
 
         btnTrace.addEventListener('click', loadProcessTrace);
 
+        btnBackToTraceList.addEventListener('click', function() {
+            if (lastEntryIdForList) {
+                traceEntryId.value = lastEntryIdForList;
+                loadProcessTrace();
+            }
+        });
+
         btnClearTrace.addEventListener('click', function () {
           traceEntryId.value = '';
           outTrace.textContent = '';
           traceSummary.style.display = 'none';
           traceTimeline.style.display = 'none';
           traceList.style.display = 'none';
+          btnBackToTraceList.style.display = 'none';
+          lastEntryIdForList = null;
         });
 
         // ========== 处理历史 ==========
@@ -1762,6 +2408,7 @@
             viewBtn.addEventListener('click', function () {
               traceEntryId.value = trace.entry_id || '';
               loadProcessTrace();
+              document.querySelector('.card:nth-child(2)').scrollIntoView({ behavior: 'smooth' });
             });
             tdOp.appendChild(viewBtn);
             tr.appendChild(tdOp);

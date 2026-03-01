@@ -75,5 +75,6 @@ server {
 
 在同一浏览器中：
 - 打开 `http://IP:PORT/miniflux-ai/user/llm-pool/metrics` 能看到 JSON
+- 打开 `http://IP:PORT/miniflux-ai/user/tasks/failure-groups` 能看到 JSON
 - 打开 `http://IP:PORT/debug/` 能加载页面
-- 在 Debug UI 点击按钮能触发 `manual-process` 并展示返回 JSON
+- 在 Debug UI 点击按钮能触发 `manual-process`、`failure-groups` 查询和重入队操作

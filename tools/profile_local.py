@@ -49,44 +49,23 @@ class FakeLLMClient:
 
 
 def _resolve_storage(config):
-    storage_cfg = config.c.get("storage", {}) or {}
-    backend = storage_cfg.get(
-        "backend", getattr(config, "storage_backend", "sqlite")
-    )
-    sqlite_path = storage_cfg.get(
-        "sqlite_path", getattr(config, "storage_sqlite_path", "runtime/miniflux_ai.db")
-    )
-    return backend.lower(), sqlite_path
+    return getattr(config, "storage_sqlite_path", "runtime/miniflux_ai.db")
 
 
 def _build_repositories(config):
     from common.entries_repository_sqlite import EntriesRepositorySQLite
     from common.ai_news_repository_sqlite import AiNewsRepositorySQLite
-    from common.entries_repository import EntriesRepository as JsonEntriesRepository
-    from common.ai_news_repository import AiNewsRepository as JsonAiNewsRepository
 
-    backend, sqlite_path = _resolve_storage(config)
-    if backend == "sqlite":
-        entries_repo = EntriesRepositorySQLite(path=sqlite_path)
-        ai_news_repo = AiNewsRepositorySQLite(path=sqlite_path)
-        storage_path = sqlite_path
-    else:
-        entries_repo = JsonEntriesRepository(path="entries.json")
-        ai_news_repo = JsonAiNewsRepository(path="ai_news.json")
-        storage_path = "entries.json"
-    return backend, storage_path, entries_repo, ai_news_repo
+    sqlite_path = _resolve_storage(config)
+    entries_repo = EntriesRepositorySQLite(path=sqlite_path)
+    ai_news_repo = AiNewsRepositorySQLite(path=sqlite_path)
+    return sqlite_path, entries_repo, ai_news_repo
 
 
-def _summarize_storage_size(backend: str, storage_path: str):
-    if backend == "sqlite":
-        if os.path.exists(storage_path):
-            return os.path.getsize(storage_path)
-        return 0
-    total = 0
-    for name in ["entries.json", "entries_processed.json", "ai_news.json"]:
-        if os.path.exists(name):
-            total += os.path.getsize(name)
-    return total
+def _summarize_storage_size(storage_path: str):
+    if os.path.exists(storage_path):
+        return os.path.getsize(storage_path)
+    return 0
 
 
 def run_batch_scenario(config_path: str, entries: int, content_bytes: int, max_workers: int):
@@ -100,7 +79,7 @@ def run_batch_scenario(config_path: str, entries: int, content_bytes: int, max_w
 
     config = Config.from_file(config_path)
     logger = get_logger(config.log_level)
-    backend, storage_path, entries_repo, ai_news_repo = _build_repositories(config)
+    storage_path, entries_repo, ai_news_repo = _build_repositories(config)
     if hasattr(config, "llm_RPM"):
         config.llm_RPM = max(config.llm_RPM, entries * 2)
     if hasattr(config, "llm_max_workers"):
@@ -145,9 +124,9 @@ def run_batch_scenario(config_path: str, entries: int, content_bytes: int, max_w
         logger,
     )
     elapsed_ms = (time.time() - start) * 1000.0
-    storage_bytes = _summarize_storage_size(backend, storage_path)
+    storage_bytes = _summarize_storage_size(storage_path)
     print("scenario=batch")
-    print(f"backend={backend} entries={entries} content_bytes={content_bytes}")
+    print(f"backend=sqlite entries={entries} content_bytes={content_bytes}")
     print(f"result={result}")
     print(f"elapsed_ms={elapsed_ms:.2f}")
     print(f"storage_bytes={storage_bytes}")
@@ -160,11 +139,8 @@ def run_ai_news_scenario(config_path: str, entries: int, content_bytes: int, sim
 
     config = Config.from_file(config_path)
     logger = get_logger(config.log_level)
-    backend, storage_path, entries_repo, ai_news_repo = _build_repositories(config)
-    if backend == "sqlite":
-        entries_repo.clear_all()
-    else:
-        entries_repo.clear_all()
+    storage_path, entries_repo, ai_news_repo = _build_repositories(config)
+    entries_repo.clear_all()
     base = time.time()
     batch_items = []
     for i in range(entries):
@@ -193,9 +169,9 @@ def run_ai_news_scenario(config_path: str, entries: int, content_bytes: int, sim
         entries_repository=entries_repo,
     )
     elapsed_ms = (time.time() - start) * 1000.0
-    storage_bytes = _summarize_storage_size(backend, storage_path)
+    storage_bytes = _summarize_storage_size(storage_path)
     print("scenario=ai-news")
-    print(f"backend={backend} entries={entries} content_bytes={content_bytes}")
+    print(f"backend=sqlite entries={entries} content_bytes={content_bytes}")
     print(f"elapsed_ms={elapsed_ms:.2f}")
     print(f"storage_bytes={storage_bytes}")
 
