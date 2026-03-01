@@ -1,6 +1,9 @@
 import unittest
+import json
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
+
+import urllib3
 
 from adapters.llm_gateway import LLMGateway
 from adapters.miniflux_gateway import MinifluxGateway
@@ -35,6 +38,11 @@ class TestMinifluxGateway(unittest.TestCase):
 
 
 class TestLLMGateway(unittest.TestCase):
+    @staticmethod
+    def _response(status_code, payload):
+        body = json.dumps(payload).encode("utf-8")
+        return SimpleNamespace(status=status_code, data=body)
+
     def test_openai_provider_builds_messages_and_respects_max_length(self):
         cfg = SimpleNamespace(
             llm_provider='openai',
@@ -44,29 +52,106 @@ class TestLLMGateway(unittest.TestCase):
             llm_timeout=33,
             llm_max_length=4,
         )
-        completion = SimpleNamespace(
-            choices=[SimpleNamespace(message=SimpleNamespace(content='ok'))]
-        )
-        create = Mock(return_value=completion)
-        fake_client = SimpleNamespace(
-            chat=SimpleNamespace(
-                completions=SimpleNamespace(create=create)
+        request_mock = Mock(
+            return_value=self._response(
+                200,
+                {"choices": [{"message": {"content": "ok"}}]},
             )
         )
-
-        with patch('adapters.llm_gateway.OpenAI', return_value=fake_client):
+        with patch('adapters.llm_gateway.urllib3.PoolManager') as pool_ctor:
+            pool_ctor.return_value = SimpleNamespace(request=request_mock)
             gateway = LLMGateway(cfg)
             out = gateway.get_result('system prompt', '123456', logger=None)
 
         self.assertEqual(out, 'ok')
-        create.assert_called_once()
-        kwargs = create.call_args.kwargs
-        self.assertEqual(kwargs['model'], 'm')
-        self.assertEqual(kwargs['timeout'], 33)
-        self.assertEqual(kwargs['messages'][0]['content'], 'system prompt')
-        self.assertIn('1234', kwargs['messages'][1]['content'])
+        request_mock.assert_called_once()
+        args = request_mock.call_args.args
+        kwargs = request_mock.call_args.kwargs
+        self.assertEqual(args[0], 'POST')
+        self.assertEqual(args[1], 'http://llm.local/v1/chat/completions')
+        self.assertEqual(kwargs['headers']['Authorization'], 'Bearer k')
+        self.assertIsInstance(kwargs['timeout'], urllib3.Timeout)
+        payload = json.loads(kwargs['body'].decode('utf-8'))
+        self.assertEqual(payload['model'], 'm')
+        self.assertEqual(payload['messages'][0]['content'], 'system prompt')
+        self.assertIn('1234', payload['messages'][1]['content'])
 
-    def test_gemini_provider_uses_generate_content(self):
+    def test_openai_provider_handles_array_content(self):
+        cfg = SimpleNamespace(
+            llm_provider='openai',
+            llm_base_url='http://llm.local',
+            llm_api_key='k',
+            llm_model='m',
+            llm_timeout=30,
+            llm_max_length=None,
+        )
+        request_mock = Mock(
+            return_value=self._response(
+                200,
+                {
+                    "choices": [
+                        {
+                            "message": {
+                                "content": [
+                                    {"type": "text", "text": "hello "},
+                                    {"type": "text", "text": "world"},
+                                ]
+                            }
+                        }
+                    ]
+                },
+            )
+        )
+        with patch('adapters.llm_gateway.urllib3.PoolManager') as pool_ctor:
+            pool_ctor.return_value = SimpleNamespace(request=request_mock)
+            gateway = LLMGateway(cfg)
+            out = gateway.get_result('system prompt', 'input', logger=None)
+        self.assertEqual(out, 'hello world')
+
+    def test_openai_provider_fallbacks_to_v1_path(self):
+        cfg = SimpleNamespace(
+            llm_provider='openai',
+            llm_base_url='http://llm.local',
+            llm_api_key='k',
+            llm_model='m',
+            llm_timeout=30,
+            llm_max_length=None,
+        )
+        request_mock = Mock(
+            side_effect=[
+                self._response(404, {"error": "not found"}),
+                self._response(200, {"choices": [{"message": {"content": "ok-v1"}}]}),
+            ]
+        )
+        with patch('adapters.llm_gateway.urllib3.PoolManager') as pool_ctor:
+            pool_ctor.return_value = SimpleNamespace(request=request_mock)
+            gateway = LLMGateway(cfg)
+            out = gateway.get_result('system prompt', 'input', logger=None)
+        self.assertEqual(out, 'ok-v1')
+        self.assertEqual(request_mock.call_count, 2)
+        first_url = request_mock.call_args_list[0].args[1]
+        second_url = request_mock.call_args_list[1].args[1]
+        self.assertEqual(first_url, 'http://llm.local/chat/completions')
+        self.assertEqual(second_url, 'http://llm.local/v1/chat/completions')
+
+    def test_openai_provider_non_2xx_raises_runtime_error(self):
+        cfg = SimpleNamespace(
+            llm_provider='openai',
+            llm_base_url='http://llm.local',
+            llm_api_key='k',
+            llm_model='m',
+            llm_timeout=30,
+            llm_max_length=None,
+        )
+        request_mock = Mock(return_value=self._response(401, {"error": "unauthorized"}))
+        with patch('adapters.llm_gateway.urllib3.PoolManager') as pool_ctor:
+            pool_ctor.return_value = SimpleNamespace(request=request_mock)
+            gateway = LLMGateway(cfg)
+            with self.assertRaises(RuntimeError) as ctx:
+                gateway.get_result('system prompt', 'input', logger=None)
+        self.assertIn('OpenAI HTTP error status=401', str(ctx.exception))
+
+    def test_gemini_provider_uses_generate_content_http(self):
         cfg = SimpleNamespace(
             llm_provider='gemini',
             llm_base_url='http://gemini.local',
@@ -75,34 +160,53 @@ class TestLLMGateway(unittest.TestCase):
             llm_timeout=30,
             llm_max_length=None,
         )
-        response = SimpleNamespace(text='gemini-ok')
-        generate_content = Mock(return_value=response)
-        fake_client = SimpleNamespace(
-            models=SimpleNamespace(generate_content=generate_content)
+        request_mock = Mock(
+            return_value=self._response(
+                200,
+                {
+                    "candidates": [
+                        {"content": {"parts": [{"text": "gemini-ok"}]}}
+                    ]
+                },
+            )
         )
-
-        with patch(
-            'adapters.llm_gateway.types.HttpOptions',
-            side_effect=lambda base_url: {'base_url': base_url},
-        ), patch(
-            'adapters.llm_gateway.types.GenerateContentConfig',
-            side_effect=lambda system_instruction: {'system_instruction': system_instruction},
-        ), patch(
-            'adapters.llm_gateway.genai.Client',
-            return_value=fake_client,
-        ):
+        with patch('adapters.llm_gateway.urllib3.PoolManager') as pool_ctor:
+            pool_ctor.return_value = SimpleNamespace(request=request_mock)
             gateway = LLMGateway(cfg)
             out = gateway.get_result('${content}', 'hello', logger=None)
 
         self.assertEqual(out, 'gemini-ok')
-        generate_content.assert_called_once()
-        kwargs = generate_content.call_args.kwargs
-        self.assertEqual(kwargs['model'], 'gemini-test')
-        self.assertEqual(kwargs['contents'], 'hello')
+        request_mock.assert_called_once()
+        args = request_mock.call_args.args
+        kwargs = request_mock.call_args.kwargs
+        self.assertEqual(args[1], 'http://gemini.local/v1beta/models/gemini-test:generateContent')
+        self.assertEqual(kwargs['headers']['x-goog-api-key'], 'k')
+        payload = json.loads(kwargs['body'].decode('utf-8'))
         self.assertEqual(
-            kwargs['config'],
-            {'system_instruction': ['You are a helpful assistant.']},
+            payload['systemInstruction'],
+            {'parts': [{'text': 'You are a helpful assistant.'}]},
         )
+        self.assertEqual(
+            payload['contents'],
+            [{'role': 'user', 'parts': [{'text': 'hello'}]}],
+        )
+
+    def test_gemini_provider_parse_error_raises_runtime_error(self):
+        cfg = SimpleNamespace(
+            llm_provider='gemini',
+            llm_base_url='http://gemini.local',
+            llm_api_key='k',
+            llm_model='gemini-test',
+            llm_timeout=30,
+            llm_max_length=None,
+        )
+        request_mock = Mock(return_value=self._response(200, {"candidates": [{}]}))
+        with patch('adapters.llm_gateway.urllib3.PoolManager') as pool_ctor:
+            pool_ctor.return_value = SimpleNamespace(request=request_mock)
+            gateway = LLMGateway(cfg)
+            with self.assertRaises(RuntimeError) as ctx:
+                gateway.get_result('system prompt', 'hello', logger=None)
+        self.assertIn('Gemini response parse error', str(ctx.exception))
 
 
 if __name__ == '__main__':

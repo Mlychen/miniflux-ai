@@ -1,5 +1,5 @@
 miniflux
-openai
+urllib3
 markdownify
 markdown
 PyYAML
@@ -7,4 +7,3 @@ flask
 feedgen
 schedule
 ratelimit
-google-genai
