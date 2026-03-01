@@ -1,6 +1,6 @@
-import unittest
 from pathlib import Path
 
+from assert_utils import AssertMixin
 from common.task_store import TASK_DEAD, TASK_DONE, TASK_RETRYABLE
 from common.task_store_sqlite import TaskStoreSQLite
 from core.task_worker import PermanentTaskError, TaskWorker
@@ -26,11 +26,11 @@ class CaptureLogger:
         self.error_logs.append(" ".join(str(i) for i in args))
 
 
-class TestTaskWorker(unittest.TestCase):
-    def setUp(self):
+class TestTaskWorker(AssertMixin):
+    def setup_method(self):
         TMP_DIR.mkdir(exist_ok=True)
 
-    def tearDown(self):
+    def teardown_method(self):
         for p in TMP_DIR.glob("*"):
             if p.is_file():
                 p.unlink()
@@ -118,7 +118,3 @@ class TestTaskWorker(unittest.TestCase):
         self.assertIn("canonical_id=canon-1", dead_logs[-1])
         self.assertIn("attempts=1", dead_logs[-1])
         self.assertIn("error=invalid payload", dead_logs[-1])
-
-
-if __name__ == "__main__":
-    unittest.main()

@@ -1,6 +1,5 @@
 import json
 import threading
-import unittest
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
@@ -74,11 +73,11 @@ def make_summary_config():
     )
 
 
-class TestConcurrencyIntegrity(unittest.TestCase):
-    def setUp(self):
+class TestConcurrencyIntegrity:
+    def setup_method(self):
         TMP_DIR.mkdir(exist_ok=True)
 
-    def tearDown(self):
+    def teardown_method(self):
         for p in TMP_DIR.glob("*"):
             if p.is_file():
                 p.unlink()
@@ -102,12 +101,12 @@ class TestConcurrencyIntegrity(unittest.TestCase):
                     "category": {"title": "News"},
                 },
             }
-            for idx in range(1, 31)
+            for idx in range(1, 61)
         ]
 
         llm_gateway = DummyLLMGateway()
         entries_repository = EntriesRepositorySQLite(path=str(sqlite_file), lock=file_lock)
-        with ThreadPoolExecutor(max_workers=10) as executor:
+        with ThreadPoolExecutor(max_workers=20) as executor:
             futures = [
                 executor.submit(
                     process_entry,
@@ -121,12 +120,17 @@ class TestConcurrencyIntegrity(unittest.TestCase):
                 for entry in entries
             ]
             for future in as_completed(futures):
-                future.result()
+                try:
+                    future.result()
+                except Exception as exc:
+                    if "database is locked" in str(exc).lower():
+                        raise AssertionError(f"database is locked: {exc}") from exc
+                    raise
 
         saved = entries_repository.read_all()
-        self.assertEqual(len(saved), len(entries))
-        self.assertEqual({item["url"] for item in saved}, {entry["url"] for entry in entries})
-        self.assertEqual(len(client.updated), len(entries))
+        assert len(saved) == len(entries)
+        assert {item["url"] for item in saved} == {entry["url"] for entry in entries}
+        assert len(client.updated) == len(entries)
 
     def test_fetch_unread_entries_processes_each_entry(self):
         config = Config.from_dict({"llm": {"max_workers": 3}})
@@ -149,8 +153,4 @@ class TestConcurrencyIntegrity(unittest.TestCase):
             logger=logger,
         )
 
-        self.assertEqual(set(seen_ids), {1, 2, 3})
-
-
-if __name__ == "__main__":
-    unittest.main()
+        assert set(seen_ids) == {1, 2, 3}

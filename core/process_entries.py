@@ -646,6 +646,7 @@ def build_rate_limited_processor(
     @sleep_and_retry
     @limits(calls=config.llm_RPM, period=60)
     def _processor(miniflux_client, entry, llm_client, logger):
+        start_time = time.time()
         if processed_news_ids is not None:
             canonical_id = make_canonical_id(entry.get("url"), entry.get("title"))
             if not processed_news_ids.try_mark(canonical_id):
@@ -660,13 +661,28 @@ def build_rate_limited_processor(
                     data={
                         "reason": "in_memory_duplicate_cache_hit",
                         "canonical_id": canonical_id,
-                        "enforced_by": "processed_repository",
+                        "enforced_by": "processed_news_ids",
                     },
                 )
                 if logger and hasattr(logger, "debug"):
                     logger.debug(
                         f"process_entry: cache_hit canonical_id={canonical_id} url={entry.get('url')} title={entry.get('title')}"
                     )
+                _trace_log(
+                    trace_id,
+                    entry_id,
+                    "process",
+                    "complete",
+                    status="skipped",
+                    duration_ms=int((time.time() - start_time) * 1000),
+                    data={
+                        "canonical_id": canonical_id,
+                        "agents_processed": 0,
+                        "agent_details": [],
+                        "reason": "in_memory_duplicate_cache_hit",
+                    },
+                )
+                return None
         return process_entry(
             miniflux_client,
             entry,

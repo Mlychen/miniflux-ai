@@ -1,4 +1,3 @@
-import unittest
 from pathlib import Path
 
 from common.entries_repository_sqlite import EntriesRepositorySQLite
@@ -8,11 +7,11 @@ TEST_DIR = Path(__file__).resolve().parent
 TMP_DIR = TEST_DIR / ".tmp_entries_repository_sqlite"
 
 
-class TestEntriesRepositorySQLite(unittest.TestCase):
-    def setUp(self):
+class TestEntriesRepositorySQLite:
+    def setup_method(self):
         TMP_DIR.mkdir(exist_ok=True)
 
-    def tearDown(self):
+    def teardown_method(self):
         for p in TMP_DIR.glob("*"):
             if p.is_file():
                 p.unlink()
@@ -55,15 +54,14 @@ class TestEntriesRepositorySQLite(unittest.TestCase):
         repo.append_summary_item(item_a)
         repo.append_summary_item(item_b)
         rows = repo.read_all()
-        self.assertEqual(len(rows), 2)
-        self.assertEqual(rows[0]["id"], "a")
-        self.assertEqual(rows[1]["id"], "b")
+        assert len(rows) == 2
+        assert rows[0]["id"] == "a"
+        assert rows[1]["id"] == "b"
 
         repo.clear_all()
-        self.assertEqual(repo.read_all(), [])
+        assert repo.read_all() == []
 
     def test_append_summary_items_batch(self):
-        """Test batch insert with append_summary_items."""
         path = TMP_DIR / "batch_entries.db"
         repo = EntriesRepositorySQLite(path=str(path))
 
@@ -88,10 +86,6 @@ class TestEntriesRepositorySQLite(unittest.TestCase):
 
         repo.append_summary_items(items)
         rows = repo.read_all()
-        self.assertEqual(len(rows), 10)
-        self.assertEqual(rows[0]["id"], "item-0")
-        self.assertEqual(rows[9]["id"], "item-9")
-
-
-if __name__ == "__main__":
-    unittest.main()
+        assert len(rows) == 10
+        assert rows[0]["id"] == "item-0"
+        assert rows[9]["id"] == "item-9"

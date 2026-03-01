@@ -1,43 +1,86 @@
-import unittest
 import json
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
+import miniflux
+import pytest
+import requests
 import urllib3
 
 from adapters.llm_gateway import LLMGateway
-from adapters.miniflux_gateway import MinifluxGateway
+from adapters.miniflux_gateway import MinifluxGateway, MinifluxGatewayError
 
 
-class TestMinifluxGateway(unittest.TestCase):
+class TestMinifluxGateway:
+    @staticmethod
+    def _response(status_code, payload):
+        response = requests.Response()
+        response.status_code = status_code
+        if payload is not None:
+            response._content = json.dumps(payload).encode("utf-8")
+            response.headers["Content-Type"] = "application/json"
+        return response
+
     def test_delegates_calls_to_underlying_client(self):
         fake_client = Mock()
 
         with patch('adapters.miniflux_gateway.miniflux.Client', return_value=fake_client) as ctor:
             gateway = MinifluxGateway('http://miniflux.local', 'api-key')
 
-        ctor.assert_called_once_with('http://miniflux.local', api_key='api-key')
+        ctor.assert_called_once_with("http://miniflux.local", api_key="api-key")
 
         gateway.me()
         fake_client.me.assert_called_once_with()
 
-        gateway.get_entries(status=['unread'], limit=20)
-        fake_client.get_entries.assert_called_once_with(status=['unread'], limit=20)
+        gateway.get_entries(status=["unread"], limit=20)
+        fake_client.get_entries.assert_called_once_with(status=["unread"], limit=20)
 
-        gateway.update_entry(10, content='x')
-        fake_client.update_entry.assert_called_once_with(10, content='x')
+        gateway.update_entry(10, content="x")
+        fake_client.update_entry.assert_called_once_with(10, content="x")
 
         gateway.get_feeds()
         fake_client.get_feeds.assert_called_once_with()
 
-        gateway.create_feed(category_id=1, feed_url='http://x/rss')
-        fake_client.create_feed.assert_called_once_with(category_id=1, feed_url='http://x/rss')
+        gateway.create_feed(category_id=1, feed_url="http://x/rss")
+        fake_client.create_feed.assert_called_once_with(category_id=1, feed_url="http://x/rss")
 
         gateway.refresh_feed(99)
         fake_client.refresh_feed.assert_called_once_with(99)
 
+    def test_maps_not_found_error(self):
+        response = self._response(404, {"error_message": "not found"})
+        err = miniflux.ResourceNotFound(response)
+        fake_client = Mock()
+        fake_client.get_entry.side_effect = err
+        with patch("adapters.miniflux_gateway.miniflux.Client", return_value=fake_client):
+            gateway = MinifluxGateway("http://miniflux.local", "api-key")
+            with pytest.raises(MinifluxGatewayError) as ctx:
+                gateway.get_entry(10)
+        assert ctx.value.status_code == 404
+        assert "status_code=404" in str(ctx.value)
 
-class TestLLMGateway(unittest.TestCase):
+    def test_maps_client_error(self):
+        response = self._response(500, {"error_message": "server error"})
+        err = miniflux.ClientError(response)
+        fake_client = Mock()
+        fake_client.get_entries.side_effect = err
+        with patch("adapters.miniflux_gateway.miniflux.Client", return_value=fake_client):
+            gateway = MinifluxGateway("http://miniflux.local", "api-key")
+            with pytest.raises(MinifluxGatewayError) as ctx:
+                gateway.get_entries(status=["unread"])
+        assert ctx.value.status_code == 500
+        assert "status_code=500" in str(ctx.value)
+
+    def test_maps_timeout(self):
+        fake_client = Mock()
+        fake_client.me.side_effect = TimeoutError("timeout")
+        with patch("adapters.miniflux_gateway.miniflux.Client", return_value=fake_client):
+            gateway = MinifluxGateway("http://miniflux.local", "api-key")
+            with pytest.raises(MinifluxGatewayError) as ctx:
+                gateway.me()
+        assert "timeout" in str(ctx.value)
+
+class TestLLMGateway:
     @staticmethod
     def _response(status_code, payload):
         body = json.dumps(payload).encode("utf-8")
@@ -63,18 +106,18 @@ class TestLLMGateway(unittest.TestCase):
             gateway = LLMGateway(cfg)
             out = gateway.get_result('system prompt', '123456', logger=None)
 
-        self.assertEqual(out, 'ok')
+        assert out == "ok"
         request_mock.assert_called_once()
         args = request_mock.call_args.args
         kwargs = request_mock.call_args.kwargs
-        self.assertEqual(args[0], 'POST')
-        self.assertEqual(args[1], 'http://llm.local/v1/chat/completions')
-        self.assertEqual(kwargs['headers']['Authorization'], 'Bearer k')
-        self.assertIsInstance(kwargs['timeout'], urllib3.Timeout)
+        assert args[0] == "POST"
+        assert args[1] == "http://llm.local/v1/chat/completions"
+        assert kwargs["headers"]["Authorization"] == "Bearer k"
+        assert isinstance(kwargs["timeout"], urllib3.Timeout)
         payload = json.loads(kwargs['body'].decode('utf-8'))
-        self.assertEqual(payload['model'], 'm')
-        self.assertEqual(payload['messages'][0]['content'], 'system prompt')
-        self.assertIn('1234', payload['messages'][1]['content'])
+        assert payload["model"] == "m"
+        assert payload["messages"][0]["content"] == "system prompt"
+        assert "1234" in payload["messages"][1]["content"]
 
     def test_openai_provider_handles_array_content(self):
         cfg = SimpleNamespace(
@@ -106,7 +149,7 @@ class TestLLMGateway(unittest.TestCase):
             pool_ctor.return_value = SimpleNamespace(request=request_mock)
             gateway = LLMGateway(cfg)
             out = gateway.get_result('system prompt', 'input', logger=None)
-        self.assertEqual(out, 'hello world')
+        assert out == "hello world"
 
     def test_openai_provider_fallbacks_to_v1_path(self):
         cfg = SimpleNamespace(
@@ -127,12 +170,12 @@ class TestLLMGateway(unittest.TestCase):
             pool_ctor.return_value = SimpleNamespace(request=request_mock)
             gateway = LLMGateway(cfg)
             out = gateway.get_result('system prompt', 'input', logger=None)
-        self.assertEqual(out, 'ok-v1')
-        self.assertEqual(request_mock.call_count, 2)
+        assert out == "ok-v1"
+        assert request_mock.call_count == 2
         first_url = request_mock.call_args_list[0].args[1]
         second_url = request_mock.call_args_list[1].args[1]
-        self.assertEqual(first_url, 'http://llm.local/chat/completions')
-        self.assertEqual(second_url, 'http://llm.local/v1/chat/completions')
+        assert first_url == "http://llm.local/chat/completions"
+        assert second_url == "http://llm.local/v1/chat/completions"
 
     def test_openai_provider_non_2xx_raises_runtime_error(self):
         cfg = SimpleNamespace(
@@ -147,9 +190,9 @@ class TestLLMGateway(unittest.TestCase):
         with patch('adapters.llm_gateway.urllib3.PoolManager') as pool_ctor:
             pool_ctor.return_value = SimpleNamespace(request=request_mock)
             gateway = LLMGateway(cfg)
-            with self.assertRaises(RuntimeError) as ctx:
-                gateway.get_result('system prompt', 'input', logger=None)
-        self.assertIn('OpenAI HTTP error status=401', str(ctx.exception))
+            with pytest.raises(RuntimeError) as ctx:
+                gateway.get_result("system prompt", "input", logger=None)
+        assert "OpenAI HTTP error status=401" in str(ctx.value)
 
     def test_gemini_provider_uses_generate_content_http(self):
         cfg = SimpleNamespace(
@@ -175,21 +218,17 @@ class TestLLMGateway(unittest.TestCase):
             gateway = LLMGateway(cfg)
             out = gateway.get_result('${content}', 'hello', logger=None)
 
-        self.assertEqual(out, 'gemini-ok')
+        assert out == "gemini-ok"
         request_mock.assert_called_once()
         args = request_mock.call_args.args
         kwargs = request_mock.call_args.kwargs
-        self.assertEqual(args[1], 'http://gemini.local/v1beta/models/gemini-test:generateContent')
-        self.assertEqual(kwargs['headers']['x-goog-api-key'], 'k')
-        payload = json.loads(kwargs['body'].decode('utf-8'))
-        self.assertEqual(
-            payload['systemInstruction'],
-            {'parts': [{'text': 'You are a helpful assistant.'}]},
-        )
-        self.assertEqual(
-            payload['contents'],
-            [{'role': 'user', 'parts': [{'text': 'hello'}]}],
-        )
+        assert args[1] == "http://gemini.local/v1beta/models/gemini-test:generateContent"
+        assert kwargs["headers"]["x-goog-api-key"] == "k"
+        payload = json.loads(kwargs["body"].decode("utf-8"))
+        assert payload["systemInstruction"] == {
+            "parts": [{"text": "You are a helpful assistant."}]
+        }
+        assert payload["contents"] == [{"role": "user", "parts": [{"text": "hello"}]}]
 
     def test_gemini_provider_parse_error_raises_runtime_error(self):
         cfg = SimpleNamespace(
@@ -204,10 +243,6 @@ class TestLLMGateway(unittest.TestCase):
         with patch('adapters.llm_gateway.urllib3.PoolManager') as pool_ctor:
             pool_ctor.return_value = SimpleNamespace(request=request_mock)
             gateway = LLMGateway(cfg)
-            with self.assertRaises(RuntimeError) as ctx:
-                gateway.get_result('system prompt', 'hello', logger=None)
-        self.assertIn('Gemini response parse error', str(ctx.exception))
-
-
-if __name__ == '__main__':
-    unittest.main()
+            with pytest.raises(RuntimeError) as ctx:
+                gateway.get_result("system prompt", "hello", logger=None)
+        assert "Gemini response parse error" in str(ctx.value)

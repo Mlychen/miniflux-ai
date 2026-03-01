@@ -1,9 +1,9 @@
 import hashlib
 import hmac
 import json
-import unittest
 from pathlib import Path
 
+from assert_utils import AssertMixin
 from common.config import Config
 from common.task_store_sqlite import TaskStoreSQLite
 from myapp import create_app
@@ -59,7 +59,7 @@ def sign_payload(secret, payload_bytes):
     return hmac.new(secret.encode("utf-8"), payload_bytes, hashlib.sha256).hexdigest()
 
 
-class TestWebhookAPI(unittest.TestCase):
+class TestWebhookAPI(AssertMixin):
     def test_rejects_request_when_webhook_secret_missing(self):
         config = make_config(webhook_secret=None)
         app = create_app(
@@ -155,13 +155,69 @@ class TestWebhookAPI(unittest.TestCase):
             {"status": "error", "message": "task store not configured"},
         )
 
+    def test_returns_400_when_payload_invalid(self):
+        secret = "test-secret"
+        config = make_config(webhook_secret=secret)
+        app = create_app(
+            config,
+            miniflux_client=object(),
+            llm_client=object(),
+            logger=DummyLogger(),
+            entry_processor=lambda *a, **k: None,
+        )
+        payload = {"entries": {"id": 1}, "feed": {"site_url": "https://example.com"}}
+        body = json.dumps(payload).encode("utf-8")
+        signature = sign_payload(secret, body)
 
-class TestWebhookTaskStoreIntegration(unittest.TestCase):
-    def setUp(self):
+        with app.test_client() as client:
+            response = client.post(
+                "/miniflux-ai/webhook/entries",
+                data=body,
+                content_type="application/json",
+                headers={"X-Miniflux-Signature": signature},
+            )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(
+            response.get_json(),
+            {"status": "error", "message": "invalid payload"},
+        )
+
+    def test_returns_200_when_save_entry_event(self):
+        secret = "test-secret"
+        config = make_config(webhook_secret=secret)
+        app = create_app(
+            config,
+            miniflux_client=object(),
+            llm_client=object(),
+            logger=DummyLogger(),
+            entry_processor=lambda *a, **k: None,
+        )
+        payload = {"event_type": "save_entry"}
+        body = json.dumps(payload).encode("utf-8")
+        signature = sign_payload(secret, body)
+
+        with app.test_client() as client:
+            response = client.post(
+                "/miniflux-ai/webhook/entries",
+                data=body,
+                content_type="application/json",
+                headers={"X-Miniflux-Signature": signature},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response.get_json(),
+            {"status": "ignored", "reason": "save_entry not processed"},
+        )
+
+
+class TestWebhookTaskStoreIntegration(AssertMixin):
+    def setup_method(self):
         self.tmp_dir = Path(__file__).resolve().parent / ".tmp_webhook_task_store"
         self.tmp_dir.mkdir(exist_ok=True)
 
-    def tearDown(self):
+    def teardown_method(self):
         for p in self.tmp_dir.glob("*"):
             if p.is_file():
                 p.unlink()
@@ -358,7 +414,3 @@ class TestWebhookTaskStoreIntegration(unittest.TestCase):
         self.assertEqual(
             response.get_json(), {"status": "error", "message": "task persistence failed"}
         )
-
-
-if __name__ == "__main__":
-    unittest.main()

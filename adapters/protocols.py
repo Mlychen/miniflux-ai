@@ -21,10 +21,6 @@ class LLMGatewayProtocol(Protocol):
     def get_result(self, prompt: str, request: str, logger: Any = None): ...
 
 
-# Alias for backwards compatibility
-LLMClientProtocol = LLMGatewayProtocol
-
-# Alias for backwards compatibility
 LLMClientProtocol = LLMGatewayProtocol
 
 

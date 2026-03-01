@@ -1,5 +1,4 @@
 import concurrent.futures
-import traceback
 
 
 def process_entries_batch(

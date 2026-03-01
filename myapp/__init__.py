@@ -6,6 +6,7 @@ from typing import cast
 import miniflux
 from flask import Flask, current_app, jsonify, request, redirect, send_from_directory
 
+from adapters.miniflux_gateway import MinifluxGatewayError
 from adapters.protocols import LLMRequestPoolProtocol
 from common.ai_news_repository_sqlite import AiNewsRepositorySQLite
 from common.entries_repository_sqlite import EntriesRepositorySQLite
@@ -88,6 +89,12 @@ def create_app(
             try:
                 me = miniflux_client.me()
                 return jsonify({"status": "ok", "me": me})
+            except MinifluxGatewayError as e:
+                if logger:
+                    logger.error(
+                        f"debug-miniflux-me: miniflux error status_code={e.status_code} reason={e.reason}"
+                    )
+                return jsonify({"status": "error", "message": "miniflux error"}), 502
             except miniflux.ClientError as e:
                 if logger:
                     logger.error(
@@ -131,6 +138,23 @@ def create_app(
                     "created_at": entry.get("created_at"),
                 }
                 return jsonify({"status": "ok", "entry": slim})
+            except MinifluxGatewayError as e:
+                if e.status_code == 404:
+                    return (
+                        jsonify(
+                            {
+                                "status": "error",
+                                "message": "entry not found",
+                                "entry_id": str(entry_id),
+                            }
+                        ),
+                        404,
+                    )
+                if logger:
+                    logger.error(
+                        f"debug-miniflux-entry: miniflux error entry_id={entry_id} status_code={e.status_code} reason={e.reason}"
+                    )
+                return jsonify({"status": "error", "message": "miniflux error"}), 502
             except miniflux.ResourceNotFound:
                 return (
                     jsonify(
@@ -206,6 +230,36 @@ def create_app(
                     ),
                     404,
                 )
+        except MinifluxGatewayError as e:
+            if e.status_code == 404:
+                if logger:
+                    logger.error(
+                        f"manual-process: entry not found entry_id={entry_id_str} remote={request.remote_addr}"
+                    )
+                return (
+                    jsonify(
+                        {
+                            "status": "error",
+                            "message": "entry not found",
+                            "entry_id": entry_id_str,
+                        }
+                    ),
+                    404,
+                )
+            if logger:
+                logger.error(
+                    f"manual-process: miniflux error entry_id={entry_id_str} status_code={e.status_code} reason={e.reason}"
+                )
+            return (
+                jsonify(
+                    {
+                        "status": "error",
+                        "message": "miniflux error",
+                        "entry_id": entry_id_str,
+                    }
+                ),
+                502,
+            )
         except miniflux.ResourceNotFound:
             if logger:
                 logger.error(
@@ -441,13 +495,15 @@ def create_app(
             limit = int(limit_raw) if limit_raw is not None else 100
         except ValueError:
             limit = 100
-        if limit <= 0: limit = 100
+        if limit <= 0:
+            limit = 100
             
         try:
             offset = int(offset_raw) if offset_raw is not None else 0
         except ValueError:
             offset = 0
-        if offset < 0: offset = 0
+        if offset < 0:
+            offset = 0
             
         try:
             all_entries = entries_repository.read_all()
@@ -519,7 +575,6 @@ def create_app(
 
     @app.route("/miniflux-ai/user/process-trace/<entry_id>", methods=["GET"])
     def get_process_trace(entry_id):
-        from common.logger import get_process_logger
         import json
         
         # This implementation reads from the log file. 
@@ -544,7 +599,8 @@ def create_app(
                             record = json.loads(line)
                             if str(record.get("entry_id")) == target_id:
                                 trace_id = record.get("trace_id")
-                                if not trace_id: continue
+                                if not trace_id:
+                                    continue
                                 
                                 if trace_id not in found_traces:
                                     found_traces[trace_id] = {
@@ -671,7 +727,8 @@ def create_app(
                     try:
                         record = json.loads(line)
                         trace_id = record.get("trace_id")
-                        if not trace_id: continue
+                        if not trace_id:
+                            continue
                         
                         if trace_id not in traces:
                             traces[trace_id] = {

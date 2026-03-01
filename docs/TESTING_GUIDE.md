@@ -8,13 +8,13 @@ This is the single entry point for test execution, live verification, and LLM te
 
 - Scope: feed filtering and duplicate-guard behavior.
 - Command:
-  - `uv run python -m unittest -q tests.test_filter`
+  - `uv run pytest tests/unit/test_filter.py`
 
 ### config
 
 - Scope: config parsing from dict/file and key mapping.
 - Command:
-  - `uv run python -m unittest -q tests.test_config`
+  - `uv run pytest tests/unit/test_config.py`
 
 ### integrity
 
@@ -23,13 +23,13 @@ This is the single entry point for test execution, live verification, and LLM te
   - idempotent skip for processed entries
   - AI news generation and cleanup consistency
 - Command:
-  - `uv run python -m unittest -q tests.test_data_integrity`
+  - `uv run pytest tests/unit/test_data_integrity.py`
 
 ### webhook-api
 
 - Scope: webhook signature validation and API status-code contract.
 - Command:
-  - `uv run python -m unittest -q tests.test_webhook_api`
+  - `uv run pytest tests/integration/test_webhook_api.py`
 
 ### task-store-sqlite
 
@@ -38,7 +38,7 @@ This is the single entry point for test execution, live verification, and LLM te
   - claim lease/retry/requeue behavior
   - failure-group aggregation and normalized `error_key`
 - Command:
-  - `uv run python -m unittest -q tests.test_task_store_sqlite`
+  - `uv run pytest tests/unit/test_task_store_sqlite.py`
 
 ### task-worker
 
@@ -47,7 +47,7 @@ This is the single entry point for test execution, live verification, and LLM te
   - retryable vs dead transition behavior
   - runtime stop and polling behavior
 - Command:
-  - `uv run python -m unittest -q tests.test_task_worker`
+  - `uv run pytest tests/unit/test_task_worker.py`
 
 ### task-query-api
 
@@ -55,7 +55,7 @@ This is the single entry point for test execution, live verification, and LLM te
   - `/miniflux-ai/user/tasks*` observability and requeue endpoints
   - pagination/filter validation and error contracts
 - Command:
-  - `uv run python -m unittest -q tests.test_task_query_api`
+  - `uv run pytest tests/integration/test_task_query_api.py`
 
 ### concurrency
 
@@ -63,13 +63,13 @@ This is the single entry point for test execution, live verification, and LLM te
   - concurrent repository write integrity
   - batch fetch path processes each unread entry
 - Command:
-  - `uv run python -m unittest -q tests.test_concurrency_integrity`
+  - `uv run pytest tests/integration/test_concurrency_integrity.py`
 
 ### ai-news-api
 
 - Scope: `/miniflux-ai/rss/ai-news` output and AI news repository consume-and-clear behavior.
 - Command:
-  - `uv run python -m unittest -q tests.test_ai_news_api`
+  - `uv run pytest tests/integration/test_ai_news_api.py`
 
 ### batch-usecase
 
@@ -77,7 +77,7 @@ This is the single entry point for test execution, live verification, and LLM te
   - shared batch-processing orchestration for polling and webhook paths
   - failure aggregation behavior in concurrent execution
 - Command:
-  - `uv run python -m unittest -q tests.test_batch_usecase`
+  - `uv run pytest tests/unit/test_batch_usecase.py`
 
 ### service-containers
 
@@ -85,7 +85,7 @@ This is the single entry point for test execution, live verification, and LLM te
   - typed Flask service container (`AppServices`)
   - typed bootstrap runtime container (`RuntimeServices`)
 - Command:
-  - `uv run python -m unittest -q tests.test_service_containers`
+  - `uv run pytest tests/unit/test_service_containers.py`
 
 ### adapters
 
@@ -93,7 +93,7 @@ This is the single entry point for test execution, live verification, and LLM te
   - Miniflux gateway call delegation
   - LLM gateway provider-specific request building
 - Command:
-  - `uv run python -m unittest -q tests.test_adapters`
+  - `uv run pytest tests/unit/test_adapters.py`
 
 ### core-helpers
 
@@ -101,27 +101,27 @@ This is the single entry point for test execution, live verification, and LLM te
   - entry rendering helpers
   - AI news composition and feed-matching helpers
 - Command:
-  - `uv run python -m unittest -q tests.test_core_helpers`
+  - `uv run pytest tests/unit/test_core_helpers.py`
 
 ### ai-news-repository-sqlite
 
 - Scope:
   - SQLite `ai_news` repository save/consume semantics
 - Command:
-  - `uv run python -m unittest -q tests.test_ai_news_repository_sqlite`
+  - `uv run pytest tests/unit/test_ai_news_repository_sqlite.py`
 
 ### entries-repository-sqlite
 
 - Scope:
   - SQLite `entries` repository append/read/clear semantics
 - Command:
-  - `uv run python -m unittest -q tests.test_entries_repository_sqlite`
+  - `uv run pytest tests/unit/test_entries_repository_sqlite.py`
 
 ### unit-all
 
 - Scope: all local unit modules.
 - Command:
-  - `uv run python -m unittest discover -q tests`
+  - `uv run pytest tests/unit/`
 
 ### lint
 
@@ -229,7 +229,7 @@ Return:
 
 ```text
 Run:
-uv run python -m unittest discover -q tests
+uv run pytest tests/unit/
 
 Return:
 1) summary counts
@@ -256,7 +256,7 @@ Return final gate: GO or NO-GO.
 ```text
 Run integrity-focused validation for miniflux-ai.
 Required:
-- tests.test_data_integrity
+- tests/unit/test_data_integrity.py
 - one live generate_daily_news run (if config is available)
 
 Evaluate:

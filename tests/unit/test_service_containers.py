@@ -1,4 +1,3 @@
-import unittest
 import threading
 from pathlib import Path
 from types import SimpleNamespace
@@ -7,6 +6,7 @@ from unittest.mock import patch
 from flask import current_app
 
 import main
+from assert_utils import AssertMixin
 from common.ai_news_repository_sqlite import AiNewsRepositorySQLite
 from common.entries_repository_sqlite import EntriesRepositorySQLite
 from myapp import create_app
@@ -24,11 +24,11 @@ class DummyLogger:
         return None
 
 
-class TestServiceContainers(unittest.TestCase):
-    def setUp(self):
+class TestServiceContainers(AssertMixin):
+    def setup_method(self):
         TMP_DIR.mkdir(exist_ok=True)
 
-    def tearDown(self):
+    def teardown_method(self):
         for p in TMP_DIR.glob("*"):
             if p.is_file():
                 p.unlink()
@@ -124,6 +124,3 @@ class TestServiceContainers(unittest.TestCase):
         self.assertEqual(services.entries_repository.db.path, 'runtime/miniflux_ai.db')
         self.assertEqual(services.ai_news_repository.db.path, 'runtime/miniflux_ai.db')
 
-
-if __name__ == '__main__':
-    unittest.main()

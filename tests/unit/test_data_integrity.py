@@ -1,9 +1,9 @@
 import json
 import threading
-import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import ANY, patch
 
+from assert_utils import AssertMixin
 from common.config import Config
 from common.ai_news_repository_sqlite import AiNewsRepositorySQLite
 from common.entries_repository_sqlite import EntriesRepositorySQLite
@@ -53,11 +53,11 @@ class DummyLLMGateway:
             return result
 
 
-class TestDataIntegrity(unittest.TestCase):
-    def setUp(self):
+class TestDataIntegrity(AssertMixin):
+    def setup_method(self):
         TMP_DIR.mkdir(exist_ok=True)
 
-    def tearDown(self):
+    def teardown_method(self):
         for p in TMP_DIR.glob("*"):
             if p.is_file():
                 p.unlink()
@@ -658,11 +658,12 @@ class TestDataIntegrity(unittest.TestCase):
             "trace-dedup-1",
             "202",
             "dedup",
-            "check",
-            status="skipped",
+            "cache_hit",
+            status="warning",
             data={
-                "reason": "processed_repository_found",
+                "reason": "in_memory_duplicate_cache_hit",
                 "canonical_id": make_canonical_id(entry_dupe["url"], entry_dupe["title"]),
+                "enforced_by": "processed_news_ids",
             },
         )
         trace_log.assert_any_call(
@@ -671,15 +672,11 @@ class TestDataIntegrity(unittest.TestCase):
             "process",
             "complete",
             status="skipped",
-            duration_ms=unittest.mock.ANY,
+            duration_ms=ANY,
             data={
                 "canonical_id": make_canonical_id(entry_dupe["url"], entry_dupe["title"]),
                 "agents_processed": 0,
                 "agent_details": [],
-                "reason": "processed_repository_found",
+                "reason": "in_memory_duplicate_cache_hit",
             },
         )
-
-
-if __name__ == "__main__":
-    unittest.main()

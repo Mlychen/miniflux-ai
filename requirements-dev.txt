@@ -1,6 +1,10 @@
 -r requirements.txt
 pytest
+pytest-mock
+pytest-cov
+psutil
 ruff
 mypy
 types-Markdown
 types-PyYAML
+types-requests

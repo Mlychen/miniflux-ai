@@ -1,4 +1,3 @@
-import unittest
 from pathlib import Path
 
 from common.ai_news_repository_sqlite import AiNewsRepositorySQLite
@@ -19,8 +18,10 @@ class DummyLogger:
         return None
 
 
-def make_app(sqlite_path):
+def make_app(sqlite_path, ai_news_repository=None):
     config = Config.from_dict({})
+    if ai_news_repository is None:
+        ai_news_repository = AiNewsRepositorySQLite(path=str(sqlite_path))
     return create_app(
         config,
         miniflux_client=object(),
@@ -28,15 +29,15 @@ def make_app(sqlite_path):
         logger=DummyLogger(),
         entry_processor=lambda *a, **k: None,
         entries_repository=EntriesRepositorySQLite(path=str(sqlite_path)),
-        ai_news_repository=AiNewsRepositorySQLite(path=str(sqlite_path)),
+        ai_news_repository=ai_news_repository,
     )
 
 
-class TestAiNewsAPI(unittest.TestCase):
-    def setUp(self):
+class TestAiNewsAPI:
+    def setup_method(self):
         TMP_DIR.mkdir(exist_ok=True)
 
-    def tearDown(self):
+    def teardown_method(self):
         for p in TMP_DIR.glob("*"):
             if p.is_file():
                 p.unlink()
@@ -49,13 +50,13 @@ class TestAiNewsAPI(unittest.TestCase):
         with app.test_client() as client:
             response = client.get("/miniflux-ai/rss/ai-news")
 
-        self.assertEqual(response.status_code, 200)
+        assert response.status_code == 200
         xml = response.data.decode("utf-8")
-        self.assertIn("<rss", xml.lower())
-        self.assertIn("Powered by miniflux-ai", xml)
-        self.assertIn("Welcome to News", xml)
-        self.assertTrue(sqlite_path.exists())
-        self.assertEqual(repo.consume_latest(), "")
+        assert "<rss" in xml.lower()
+        assert "Powered by miniflux-ai" in xml
+        assert "Welcome to News" in xml
+        assert sqlite_path.exists()
+        assert repo.consume_latest() == ""
 
     def test_get_rss_includes_ai_news_content_and_then_clears_state(self):
         sqlite_path = TMP_DIR / "ai_news.db"
@@ -66,12 +67,24 @@ class TestAiNewsAPI(unittest.TestCase):
         with app.test_client() as client:
             response = client.get("/miniflux-ai/rss/ai-news")
 
-        self.assertEqual(response.status_code, 200)
+        assert response.status_code == 200
         xml = response.data.decode("utf-8")
-        self.assertIn("Test Brief", xml)
-        self.assertTrue("Morning" in xml or "Nightly" in xml)
-        self.assertEqual(repo.consume_latest(), "")
+        assert "Test Brief" in xml
+        assert ("Morning" in xml) or ("Nightly" in xml)
+        assert repo.consume_latest() == ""
 
+    def test_get_rss_handles_repository_failure(self):
+        sqlite_path = TMP_DIR / "ai_news_failing.db"
 
-if __name__ == "__main__":
-    unittest.main()
+        class FailingRepository:
+            def consume_latest(self):
+                raise RuntimeError("broken")
+
+        app = make_app(sqlite_path, ai_news_repository=FailingRepository())
+        with app.test_client() as client:
+            response = client.get("/miniflux-ai/rss/ai-news")
+
+        assert response.status_code == 200
+        xml = response.data.decode("utf-8")
+        assert "<rss" in xml.lower()
+        assert "Welcome to News" in xml

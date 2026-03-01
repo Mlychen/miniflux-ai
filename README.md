@@ -331,16 +331,19 @@ docker-compose up -d
 
 1. Create virtual environment: `uv venv .venv`
 2. Install dependencies: `uv pip install -r requirements-dev.txt`
-3. Run unit tests:
-   `uv run python -m unittest discover -q tests`
-4. Run app: `uv run python main.py`
+3. Run tests:
+   `uv run pytest --cov=core --cov=adapters --cov=myapp tests/`
+4. Run lint: `uv run ruff check .`
+5. Run typecheck: `uv run mypy --ignore-missing-imports .`
+6. Run app: `uv run python main.py`
 
 ### Use pip (alternative)
 
 1. Install development dependencies: `pip install -r requirements-dev.txt`
-2. Run unit tests:
-   `python -m unittest discover -q tests`
-3. Optional: run `pytest -q` if you prefer pytest runner.
+2. Run tests:
+   `pytest --cov=core --cov=adapters --cov=myapp tests/`
+3. Run lint: `ruff check .`
+4. Run typecheck: `mypy --ignore-missing-imports .`
 
 ## FAQ
 

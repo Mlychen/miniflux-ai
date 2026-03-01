@@ -1,6 +1,5 @@
 import threading
-import time
-from typing import Callable, Optional
+from typing import Callable, List
 
 
 class PermanentTaskError(Exception):
@@ -26,7 +25,7 @@ class TaskWorker:
         self._retry_delay_seconds = max(0, int(retry_delay_seconds))
         self._logger = logger
         self._running = False
-        self._threads = []
+        self._threads: List[threading.Thread] = []
         self._stop_event = threading.Event()
 
     def _log(self, level: str, message: str) -> None:
@@ -81,6 +80,10 @@ class TaskWorker:
             self._logger.info("TaskWorker.stop: all workers joined")
 
     def _worker_loop(self, processor_fn: Callable):
+        current_poll_interval = self._poll_interval
+        # Cap max poll interval at 10s or 10x the base interval
+        max_poll_interval = max(10.0, self._poll_interval * 10)
+
         while self._running and not self._stop_event.is_set():
             try:
                 tasks = self._task_store.claim_tasks(
@@ -93,8 +96,18 @@ class TaskWorker:
                 continue
 
             if not tasks:
-                self._stop_event.wait(self._poll_interval)
+                if hasattr(self._task_store, "wait_for_new_task"):
+                    # Wait for signal or timeout (adaptive backoff)
+                    self._task_store.wait_for_new_task(timeout=current_poll_interval)
+                else:
+                    self._stop_event.wait(current_poll_interval)
+                
+                # Exponential backoff: increase wait time when idle
+                current_poll_interval = min(current_poll_interval * 1.5, max_poll_interval)
                 continue
+
+            # Reset poll interval immediately when tasks are found
+            current_poll_interval = self._poll_interval
 
             for task in tasks:
                 try:

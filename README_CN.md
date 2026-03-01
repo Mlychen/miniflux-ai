@@ -240,16 +240,19 @@ docker-compose up -d
 
 1. 创建虚拟环境：`uv venv .venv`
 2. 安装依赖：`uv pip install -r requirements-dev.txt`
-3. 运行单元测试：
-   `uv run python -m unittest discover -q tests`
-4. 运行应用：`uv run python main.py`
+3. 运行测试：
+   `uv run pytest --cov=core --cov=adapters --cov=myapp tests/`
+4. 运行 lint：`uv run ruff check .`
+5. 运行 typecheck：`uv run mypy --ignore-missing-imports .`
+6. 运行应用：`uv run python main.py`
 
 ### 使用 pip（替代方案）
 
 1. 安装开发依赖：`pip install -r requirements-dev.txt`
-2. 运行单元测试：
-   `python -m unittest discover -q tests`
-3. 可选：如果你喜欢 pytest，运行 `pytest -q`。
+2. 运行测试：
+   `pytest --cov=core --cov=adapters --cov=myapp tests/`
+3. 运行 lint：`ruff check .`
+4. 运行 typecheck：`mypy --ignore-missing-imports .`
 
 ## FAQ
 <details>

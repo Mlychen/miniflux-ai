@@ -1,6 +1,6 @@
 import asyncio
-import os
 from pathlib import Path
+from typing import Any, cast
 
 # 可选：抑制 browser-use 的冗余日志
 # os.environ["BROWSER_USE_LOG_LEVEL"] = "error"
@@ -12,7 +12,6 @@ downloads.mkdir(exist_ok=True)
 # 2. 修补 BrowserProfile 以强制使用安全路径
 # 注意：必须在导入 BrowserSession 之前进行修补，因为 session 模块在导入时可能会初始化默认 profile
 try:
-    import browser_use.browser.profile
     from browser_use.browser.profile import BrowserProfile
     
     OriginalInit = BrowserProfile.__init__
@@ -23,15 +22,14 @@ try:
             data['downloads_path'] = downloads
         OriginalInit(self, **data)
         
-    BrowserProfile.__init__ = PatchedInit
+    patched_profile = cast(Any, BrowserProfile)
+    patched_profile.__init__ = PatchedInit
 except ImportError:
     pass
 
-# 3. 导入核心组件
-from browser_use.browser.session import BrowserSession
-from browser_use.browser.events import NavigateToUrlEvent
-
 async def main():
+    from browser_use.browser.events import NavigateToUrlEvent
+    from browser_use.browser.session import BrowserSession
     print("Initializing BrowserSession...")
     
     # 初始化 Session

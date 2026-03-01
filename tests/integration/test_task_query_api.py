@@ -1,6 +1,6 @@
-import unittest
 from pathlib import Path
 
+from assert_utils import AssertMixin
 from common.config import Config
 from common.task_error_key import normalize_error_key
 from common.task_store import TASK_DONE
@@ -30,11 +30,11 @@ def make_config():
     return Config.from_dict({"miniflux": {}, "llm": {"max_workers": 1}})
 
 
-class TestTaskQueryAPI(unittest.TestCase):
-    def setUp(self):
+class TestTaskQueryAPI(AssertMixin):
+    def setup_method(self):
         TMP_DIR.mkdir(exist_ok=True)
 
-    def tearDown(self):
+    def teardown_method(self):
         for p in TMP_DIR.glob("*"):
             if p.is_file():
                 p.unlink()
@@ -145,6 +145,25 @@ class TestTaskQueryAPI(unittest.TestCase):
             {"status": "error", "message": "invalid include_payload"},
         )
 
+    def test_list_tasks_returns_500_when_task_query_fails(self):
+        class FailingTaskStore:
+            def list_tasks(self, **kwargs):
+                raise RuntimeError("query failed")
+
+            def count_tasks(self, **kwargs):
+                return 0
+
+        app = self._build_app(task_store=FailingTaskStore())
+
+        with app.test_client() as client:
+            response = client.get("/miniflux-ai/user/tasks")
+
+        self.assertEqual(response.status_code, 500)
+        self.assertEqual(
+            response.get_json(),
+            {"status": "error", "message": "task query failed"},
+        )
+
     def test_get_task_returns_task_detail(self):
         task_store = TaskStoreSQLite(path=str(TMP_DIR / "tasks_get.db"))
         task_store.create_task("canon-1", {"entry_id": 101}, "trace-1", now_ts=1000)
@@ -186,6 +205,22 @@ class TestTaskQueryAPI(unittest.TestCase):
         self.assertEqual(
             response.get_json(),
             {"status": "error", "message": "invalid task_id"},
+        )
+
+    def test_get_task_returns_500_when_task_query_fails(self):
+        class FailingTaskStore:
+            def get_task(self, task_id):
+                raise RuntimeError("query failed")
+
+        app = self._build_app(task_store=FailingTaskStore())
+
+        with app.test_client() as client:
+            response = client.get("/miniflux-ai/user/tasks/1")
+
+        self.assertEqual(response.status_code, 500)
+        self.assertEqual(
+            response.get_json(),
+            {"status": "error", "message": "task query failed"},
         )
 
     def test_task_metrics_returns_status_counts(self):
@@ -240,6 +275,22 @@ class TestTaskQueryAPI(unittest.TestCase):
         self.assertEqual(payload["retries"]["avg_attempts_done"], 1.0)
         self.assertEqual(payload["retries"]["avg_attempts_dead"], 1.0)
 
+    def test_task_metrics_returns_500_when_task_query_fails(self):
+        class FailingTaskStore:
+            def get_metrics(self, **kwargs):
+                raise RuntimeError("query failed")
+
+        app = self._build_app(task_store=FailingTaskStore())
+
+        with app.test_client() as client:
+            response = client.get("/miniflux-ai/user/tasks/metrics")
+
+        self.assertEqual(response.status_code, 500)
+        self.assertEqual(
+            response.get_json(),
+            {"status": "error", "message": "task query failed"},
+        )
+
     def test_failure_groups_returns_aggregated_rows(self):
         task_store = TaskStoreSQLite(path=str(TMP_DIR / "tasks_failure_groups.db"))
 
@@ -280,6 +331,25 @@ class TestTaskQueryAPI(unittest.TestCase):
         self.assertEqual(payload["groups"][0]["error_key"], "network timeout")
         self.assertEqual(payload["groups"][0]["error"], "network timeout")
         self.assertEqual(payload["groups"][0]["count"], 2)
+
+    def test_failure_groups_returns_500_when_task_query_fails(self):
+        class FailingTaskStore:
+            def list_failure_groups(self, **kwargs):
+                raise RuntimeError("query failed")
+
+            def count_failure_groups(self, **kwargs):
+                return 0
+
+        app = self._build_app(task_store=FailingTaskStore())
+
+        with app.test_client() as client:
+            response = client.get("/miniflux-ai/user/tasks/failure-groups")
+
+        self.assertEqual(response.status_code, 500)
+        self.assertEqual(
+            response.get_json(),
+            {"status": "error", "message": "task query failed"},
+        )
 
     def test_failure_groups_supports_status_filter(self):
         task_store = TaskStoreSQLite(path=str(TMP_DIR / "tasks_failure_groups_filter.db"))
@@ -381,6 +451,27 @@ class TestTaskQueryAPI(unittest.TestCase):
         self.assertEqual(payload["tasks"][0]["error_key"], expected_key)
         self.assertEqual(payload["tasks"][1]["error_key"], expected_key)
         self.assertNotIn("payload", payload["tasks"][0])
+
+    def test_failure_group_tasks_returns_500_when_task_query_fails(self):
+        class FailingTaskStore:
+            def list_failed_tasks(self, **kwargs):
+                raise RuntimeError("query failed")
+
+            def count_failed_tasks(self, **kwargs):
+                return 0
+
+        app = self._build_app(task_store=FailingTaskStore())
+
+        with app.test_client() as client:
+            response = client.get(
+                "/miniflux-ai/user/tasks/failure-groups/tasks?status=retryable"
+            )
+
+        self.assertEqual(response.status_code, 500)
+        self.assertEqual(
+            response.get_json(),
+            {"status": "error", "message": "task query failed"},
+        )
 
     def test_failure_group_tasks_supports_include_payload(self):
         task_store = TaskStoreSQLite(path=str(TMP_DIR / "tasks_failure_group_tasks_payload.db"))
@@ -507,6 +598,25 @@ class TestTaskQueryAPI(unittest.TestCase):
             {"status": "error", "message": "invalid failure status"},
         )
 
+    def test_failure_groups_requeue_returns_500_when_task_update_fails(self):
+        class FailingTaskStore:
+            def requeue_tasks(self, **kwargs):
+                raise RuntimeError("update failed")
+
+        app = self._build_app(task_store=FailingTaskStore())
+
+        with app.test_client() as client:
+            response = client.post(
+                "/miniflux-ai/user/tasks/failure-groups/requeue",
+                json={"status": "retryable"},
+            )
+
+        self.assertEqual(response.status_code, 500)
+        self.assertEqual(
+            response.get_json(),
+            {"status": "error", "message": "task update failed"},
+        )
+
     def test_failure_groups_returns_400_for_invalid_status(self):
         task_store = TaskStoreSQLite(path=str(TMP_DIR / "tasks_failure_groups_invalid.db"))
         app = self._build_app(task_store=task_store)
@@ -543,6 +653,22 @@ class TestTaskQueryAPI(unittest.TestCase):
         self.assertTrue(payload["requeued"])
         refreshed = task_store.get_task(dead_task.id)
         self.assertEqual(refreshed.status, "pending")
+
+    def test_requeue_task_endpoint_returns_500_when_task_update_fails(self):
+        class FailingTaskStore:
+            def requeue_task(self, task_id):
+                raise RuntimeError("update failed")
+
+        app = self._build_app(task_store=FailingTaskStore())
+
+        with app.test_client() as client:
+            response = client.post("/miniflux-ai/user/tasks/1/requeue")
+
+        self.assertEqual(response.status_code, 500)
+        self.assertEqual(
+            response.get_json(),
+            {"status": "error", "message": "task update failed"},
+        )
 
     def test_requeue_task_endpoint_returns_404_when_task_not_found(self):
         task_store = TaskStoreSQLite(path=str(TMP_DIR / "tasks_requeue_single_not_found.db"))
@@ -603,6 +729,22 @@ class TestTaskQueryAPI(unittest.TestCase):
         self.assertEqual(
             response.get_json(),
             {"status": "error", "message": "invalid requeue status"},
+        )
+
+    def test_requeue_tasks_batch_returns_500_when_task_update_fails(self):
+        class FailingTaskStore:
+            def requeue_tasks(self, **kwargs):
+                raise RuntimeError("update failed")
+
+        app = self._build_app(task_store=FailingTaskStore())
+
+        with app.test_client() as client:
+            response = client.post("/miniflux-ai/user/tasks/requeue", json={})
+
+        self.assertEqual(response.status_code, 500)
+        self.assertEqual(
+            response.get_json(),
+            {"status": "error", "message": "task update failed"},
         )
 
     def test_task_metrics_supports_window_seconds(self):
@@ -690,7 +832,3 @@ class TestTaskQueryAPI(unittest.TestCase):
             requeue_batch_response.get_json(),
             {"status": "error", "message": "task store not configured"},
         )
-
-
-if __name__ == "__main__":
-    unittest.main()

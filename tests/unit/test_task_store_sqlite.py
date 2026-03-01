@@ -1,6 +1,6 @@
-import unittest
 from pathlib import Path
 
+from assert_utils import AssertMixin
 from common.task_error_key import normalize_error_key
 from common.task_store import TASK_DEAD, TASK_DONE, TASK_RETRYABLE, TASK_RUNNING
 from common.task_store_sqlite import TaskStoreSQLite
@@ -10,11 +10,11 @@ TEST_DIR = Path(__file__).resolve().parent
 TMP_DIR = TEST_DIR / ".tmp_task_store_sqlite"
 
 
-class TestTaskStoreSQLite(unittest.TestCase):
-    def setUp(self):
+class TestTaskStoreSQLite(AssertMixin):
+    def setup_method(self):
         TMP_DIR.mkdir(exist_ok=True)
 
-    def tearDown(self):
+    def teardown_method(self):
         for p in TMP_DIR.glob("*"):
             if p.is_file():
                 p.unlink()
@@ -409,6 +409,3 @@ class TestTaskStoreSQLite(unittest.TestCase):
         self.assertEqual(store.get_task(r1.id).status, "pending")
         self.assertEqual(store.get_task(d1.id).status, "pending")
 
-
-if __name__ == "__main__":
-    unittest.main()

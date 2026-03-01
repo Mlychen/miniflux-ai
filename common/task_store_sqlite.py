@@ -54,6 +54,12 @@ class TaskStoreSQLite:
     def __init__(self, path: str, lock: Optional[threading.Lock] = None):
         self.db = DatabaseManager(path=path, lock=lock)
         self._init_db()
+        self._new_task_cond = threading.Condition()
+
+    def wait_for_new_task(self, timeout: float = 1.0) -> None:
+        """Wait for new task signal or timeout."""
+        with self._new_task_cond:
+            self._new_task_cond.wait(timeout)
 
     def _init_db(self) -> None:
         with self.db.connection() as conn:
@@ -131,6 +137,9 @@ class TaskStoreSQLite:
                 (canonical_id, payload_json, trace_id, TASK_PENDING, attempts_cap, now, now),
             )
             conn.commit()
+            if cur.rowcount > 0:
+                with self._new_task_cond:
+                    self._new_task_cond.notify_all()
             return cur.rowcount > 0
 
     def claim_tasks(
@@ -677,6 +686,9 @@ class TaskStoreSQLite:
                 (TASK_PENDING, now, int(task_id), TASK_DEAD, TASK_RETRYABLE, TASK_RUNNING),
             )
             conn.commit()
+            if cur.rowcount > 0:
+                with self._new_task_cond:
+                    self._new_task_cond.notify_all()
             return cur.rowcount > 0
 
     def requeue_tasks(
@@ -744,4 +756,7 @@ class TaskStoreSQLite:
                 [TASK_PENDING, now, *task_ids],
             )
             conn.commit()
+            if task_ids:
+                with self._new_task_cond:
+                    self._new_task_cond.notify_all()
             return len(task_ids)

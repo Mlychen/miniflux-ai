@@ -2,7 +2,7 @@ import threading
 import time
 from collections import deque
 from dataclasses import dataclass, field
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Deque, Dict, Optional, Tuple
 
 from adapters.protocols import LLMClientProtocol
 from common.logger import ensure_logger
@@ -36,7 +36,9 @@ class LLMRequestPool:
         self._window_count = 0
         self._day_start = self._current_day_start()
         self._day_count = 0
-        self._queue = deque(maxlen=capacity or 0) if capacity and capacity > 0 else None
+        self._queue: Optional[Deque[str]] = (
+            deque(maxlen=capacity or 0) if capacity and capacity > 0 else None
+        )
         self._states: Dict[str, EntryState] = {}
         self._states_lock = threading.Lock()
         self._metrics_lock = threading.Lock()

@@ -27,6 +27,8 @@ All notable changes to this project will be documented in this file.
 
 - Webhook main path is durable-task only; no fallback to in-memory queue or sync processing.
 - Documentation refreshed for task-state architecture and debug workflow.
+- Tests migrated to pytest style, unittest entrypoints removed, and helper assertions centralized.
+- Added integration tests for process-trace and debug endpoints.
 
 ## 2026-02-26
 
