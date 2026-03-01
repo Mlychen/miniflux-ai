@@ -1,5 +1,8 @@
 # miniflux-ai
+
 Miniflux with AI
+
+[中文文档](README_CN.md) | [English](README.md)
 
 This project integrates with Miniflux to fetch RSS feed content via API or webhook. It then utilizes large language models (e.g., Ollama, ChatGPT, LLaMA, Gemini) to generate summaries, translations, and AI-driven news insights.
 
@@ -19,21 +22,21 @@ This project integrates with Miniflux to fetch RSS feed content via API or webho
     </td>
     <td>
       AI News
-    </td> 
+    </td>
   </tr>
   <tr>
-    <td> 
+    <td>
       <picture>
         <source media="(prefers-color-scheme: dark)" srcset="https://github.com/user-attachments/assets/11c208d9-816a-4c8c-bc00-2f780529e58d">
         <source media="(prefers-color-scheme: light)" srcset="https://github.com/user-attachments/assets/c97e2774-ec10-4acb-bef7-25cf8d43da15">
-        <img alt="miniflux AI summaries translations" src="https://github.com/user-attachments/assets/c97e2774-ec10-4acb-bef7-25cf8d43da15" width="400" > 
+        <img alt="miniflux AI summaries translations" src="https://github.com/user-attachments/assets/c97e2774-ec10-4acb-bef7-25cf8d43da15" width="400" >
       </picture>
     </td>
-    <td> 
+    <td>
       <picture>
         <source media="(prefers-color-scheme: dark)" srcset="https://github.com/user-attachments/assets/b40f5bdd-d265-4beb-a14c-d39d6624760b">
         <source media="(prefers-color-scheme: light)" srcset="https://github.com/user-attachments/assets/e5985025-15f3-43b0-982b-422575962783">
-        <img alt="miniflux AI summaries translations" src="https://github.com/user-attachments/assets/e5985025-15f3-43b0-982b-422575962783" width="400" > 
+        <img alt="miniflux AI summaries translations" src="https://github.com/user-attachments/assets/e5985025-15f3-43b0-982b-422575962783" width="400" >
       </picture>
     </td>
   </tr>
@@ -41,40 +44,110 @@ This project integrates with Miniflux to fetch RSS feed content via API or webho
 
 ## Architecture
 
-### Current Structure
+```mermaid
+graph TD
+    %% 外部触发点
+    Client(("外部 Webhook<br/>(Payload)"))
 
-- **Gateway layer (`adapters/`)**
-  - Encapsulates Miniflux and LLM vendor APIs behind stable protocols.
-- **Usecase layer (`core/`)**
-  - Implements polling, webhook batch processing, summary generation, and AI news workflows.
-- **Repository layer (`common/*_repository*.py`)**
-  - Persists summaries and AI news in SQLite (`runtime/miniflux_ai.db`) using WAL and batch writes.
-- **Application wiring (`main.py`, `myapp/`)**
-  - Composes gateways + repositories and injects them into usecases/routes.
+    %% ================= 1. Ingest 层 =================
+    subgraph Layer1 ["1. Ingest（入口层）: 快速接收与持久化"]
+        direction TB
+        IngestAPI["Webhook 端点"]
+        Validate["验签与校验"]
+        Normalize["规范化 & 生成 canonical_id"]
+        
+        IngestAPI --> Validate --> Normalize
+    end
 
-Current dependency direction: `gateway -> usecase -> repository` (runtime wiring done at app/bootstrap boundary).
+    %% ================= 4. Infrastructure 层 (存储部分) =================
+    subgraph Layer4_Store ["4. Infrastructure（基础设施层）: 单一真相源"]
+        TaskStore[("TaskStore (SQLite)<br/>状态机: pending / running / retryable / dead / done")]
+    end
 
-### Target Blueprint (Readability + Extensibility + Performance)
+    %% ================= 2. Worker 层 =================
+    subgraph Layer2 ["2. Worker（调度层）: 任务获取与状态流转"]
+        direction TB
+        Claim["批量 Claim (原子锁)<br/>[pending/retryable ➔ running]"]
+        StateUpdater["状态更新 & 错误分类"]
+        RetryPolicy["退避重试计算<br/>[➔ retryable / dead]"]
+        
+        Claim --> StateUpdater
+        StateUpdater --> RetryPolicy
+    end
 
-The project is moving toward a task-state architecture with a persistent queue and atomic task claiming:
+    %% ================= 3. Processor 层 =================
+    subgraph Layer3 ["3. Processor（领域处理层）: 纯业务逻辑"]
+        direction TB
+        Preprocess["预处理 (Preprocess)"]
+        AgentExec["Agent 调度执行"]
+        Render["结果渲染与摘要"]
+        
+        Preprocess --> AgentExec --> Render
+    end
+
+    %% ================= 4. Infrastructure 层 (网关部分) =================
+    subgraph Layer4_Gateway ["Infrastructure (网关集成)"]
+        LLMGW["LLM Gateway"]
+        MiniGW["Miniflux Gateway"]
+    end
+
+    %% ================= 数据流与跨层调用 =================
+    
+    %% Ingest 数据流
+    Client -- "HTTP POST" --> IngestAPI
+    Normalize -- "1. Upsert 任务 (持久化)" --> TaskStore
+    Normalize -. "2. 返回 HTTP 202" .-> Client
+
+    %% Worker 获取数据
+    TaskStore -- "3. 获取任务 (Lease)" --> Claim
+    
+    %% Worker 调用 Processor
+    Claim -- "4. 传入任务数据" --> Preprocess
+    
+    %% Processor 业务流与网关调用
+    AgentExec -- "调用大模型" --> LLMGW
+    Render -- "更新 RSS 状态" --> MiniGW
+    
+    %% Processor 返回 Worker，Worker 更新存储
+    Render -- "5. 返回处理结果/抛出异常" --> StateUpdater
+    StateUpdater -- "6. 标记 Done 或 Fail" --> TaskStore
+    RetryPolicy -- "7. 写入下次重试时间" --> TaskStore
+
+    %% ================= 可观测性 (旁路) =================
+    Observability[["可观测性组件<br/>(Metrics & TraceID)"]] -. "贯穿监控" .-> IngestAPI
+    Observability -. "监控队列深度/耗时" .-> TaskStore
+    Observability -. "错误聚类" .-> StateUpdater
+
+    %% 样式定义
+    classDef layer fill:#f4f9fc,stroke:#5ea5d8,stroke-width:2px,rx:10px,ry:10px;
+    classDef storage fill:#fff3e0,stroke:#ffb74d,stroke-width:2px;
+    classDef logic fill:#e8f5e9,stroke:#66bb6a,stroke-width:2px;
+    
+    class Layer1,Layer2,Layer3 layer;
+    class TaskStore storage;
+    class Preprocess,AgentExec,Render logic;
+```
+
+### Structure
+
+The project uses a task-state architecture with a persistent queue and atomic task claiming:
 
 - **Ingest layer (`myapp/webhook_ingest.py`)**
   - Validate webhook, normalize payload, persist task, return `202` only after durable write.
-- **Worker layer (`application/worker`)**
+- **Worker layer (`core/task_worker.py`)**
   - Claim tasks in batches, process with retry policy, finalize to `done/retry/dead`.
-- **Processor layer (`domain/processor`)**
+- **Processor layer (`core/process_entries.py`)**
   - Pure business logic only (preprocess, agents, rendering, source update), no queue/state orchestration.
-- **Infrastructure layer (`infrastructure/*`)**
+- **Infrastructure layer (`common/*`, `adapters/*`)**
   - Task store, Miniflux and LLM adapters, observability integration.
 
-Target dependency direction: `interface -> application -> domain <- infrastructure`.
+Dependency direction: `interface -> application -> domain <- infrastructure`.
 
-For details, see [`docs/ARCHITECTURE_BLUEPRINT.md`](docs/ARCHITECTURE_BLUEPRINT.md).
-Implementation baseline (frozen): [`docs/plans/2026-03-01-persistent-task-implementation-plan.md`](docs/plans/2026-03-01-persistent-task-implementation-plan.md).
+For details, see [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 
 ### App Factory Integration
 
-`create_app(...)` now takes repository dependencies directly. Typical integration (SQLite, default):
+`create_app(...)` takes repository dependencies directly. Typical integration (SQLite, default):
 
 ```python
 import threading
@@ -99,7 +172,14 @@ app = create_app(
 )
 ```
 
-Runtime persistence is SQLite-only in current architecture.
+## Documentation
+
+- [Architecture Design](docs/ARCHITECTURE.md)
+- [Testing Guide](docs/TESTING_GUIDE.md)
+- [Profiling Guide](docs/PROFILING_GUIDE.md)
+- [Logging Filter Guide](docs/LOGGING_FILTER_GUIDE.md)
+- [Process Trace Guide](docs/PROCESS_TRACE_GUIDE.md)
+- [Debug UI Guide](docs/debug-ui/README.md)
 
 ## Requirements
 
@@ -113,7 +193,7 @@ Runtime persistence is SQLite-only in current architecture.
 The repository includes template configuration files: `config.sample.English.yml` and `config.sample.Chinese.yml`. Modify `config.yml` to set up:
 
 > If using a webhook, enter the URL in Settings > Integrations > Webhook > Webhook URL.
-> 
+>
 > If deploying in a container alongside Miniflux, use the following URL:
 > http://miniflux_ai/miniflux-ai/webhook/entries.
 
@@ -156,10 +236,12 @@ ai_news:
 ```
 
 Webhook mode behavior:
+
 - `/miniflux-ai/webhook/entries` always persists to task store first.
 - If task store is not configured/available, webhook returns `500` and does not fall back to in-memory queue/synchronous processing.
 
 Task observability APIs:
+
 - `GET /miniflux-ai/user/tasks?status=&limit=&offset=&include_payload=`
   - List durable tasks (`status` optional, `limit` defaults to `100`, max `500`, `include_payload` defaults to `false`).
 - `GET /miniflux-ai/user/tasks/<task_id>`
@@ -183,6 +265,7 @@ Task observability APIs:
   - Batch requeue by filter (`status` default `dead`; optional `error`/`error_key` normalized group filter; `limit` default `100`).
 
 Debug UI:
+
 - Enable `debug_enabled: true`, then open `/debug/`.
 - `任务排障` 面板支持最小闭环：
   - 查询失败分组：`GET /miniflux-ai/user/tasks/failure-groups`
@@ -208,7 +291,6 @@ Debug UI:
 
 Data persistence uses `runtime/miniflux_ai.db` as the single source of truth.
 
-
 ## Docker Setup
 
 The project includes a `docker-compose.yml` file for easy deployment:
@@ -229,6 +311,7 @@ services:
             - ./runtime:/app/runtime
 
 ```
+
 Refer to `config.sample.*.yml`, create `config.yml`
 To start the services:
 
@@ -259,20 +342,8 @@ docker-compose up -d
    `python -m unittest discover -q tests`
 3. Optional: run `pytest -q` if you prefer pytest runner.
 
-## Testing Modules and Skill
-
-1. Unified testing guide: `TESTING_GUIDE.md`
-2. Reusable skill package:
-   - `.sisyphus/run-continuation/miniflux-test-modules/SKILL.md`
-3. Run the skill script directly:
-   - `powershell -NoProfile -ExecutionPolicy Bypass -File .sisyphus/run-continuation/miniflux-test-modules/scripts/run-module-tests.ps1 -Module unit-all`
-
-## Roadmap
-- [x] Add daily summary(by title, Summary of existing AI)
-  - [x] Add Morning and Evening News（e.g. 9/24: AI Morning News, 9/24: AI Evening News）
-  - [x] Add timed summary
-
 ## FAQ
+
 <details>
 <summary>If the formatting of summary content is incorrect, add the following code in Settings > Custom CSS:</summary>
 ```
@@ -290,15 +361,6 @@ Feel free to fork this repository and submit pull requests. Contributions and is
 ## Changelog
 
 - See `CHANGELOG.md` for API and layering changes.
-
-<a href="https://github.com/Qetesh/miniflux-ai/graphs/contributors">
-  <img src="https://contrib.rocks/image?repo=Qetesh/miniflux-ai" />
-</a>
-
-
-## Star History
-
-[![Star History Chart](https://api.star-history.com/svg?repos=Qetesh/miniflux-ai&type=Date)](https://star-history.com/#Qetesh/miniflux-ai&Date)
 
 ## License
 

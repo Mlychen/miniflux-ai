@@ -1,39 +1,79 @@
 services:
-  miniflux:
-    image: miniflux/miniflux:latest
-    depends_on:
-      postgres:
-        condition: service_healthy
-    ports:
-      - "80:8080"
+  # 数据库服务
+  db:
+    image: postgres:17
+    container_name: miniflux-db
     environment:
-      - DATABASE_URL=postgres://miniflux:secret@postgres/miniflux?sslmode=disable
-      - RUN_MIGRATIONS=1
-      - CREATE_ADMIN=1
-      - ADMIN_USERNAME=admin
-      - ADMIN_PASSWORD=test123
-    restart: unless-stopped
-  postgres:
-    image: postgres:17-alpine
-    environment:
-      - POSTGRES_USER=miniflux
-      - POSTGRES_PASSWORD=secret
-      - POSTGRES_DB=miniflux
+      - POSTGRES_USER=${POSTGRES_USER:-miniflux}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-secret}
+      - POSTGRES_DB=${POSTGRES_DB:-miniflux}
+      - TZ=Asia/Shanghai
     volumes:
       - miniflux-db:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD", "pg_isready", "-U", "miniflux"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-miniflux} -d ${POSTGRES_DB:-miniflux}"]
       interval: 10s
+      timeout: 5s
+      retries: 5
       start_period: 30s
     restart: unless-stopped
+    networks:
+      - miniflux-net
 
-  # miniflux-ai
-  miniflux_ai:
-    container_name: miniflux_ai
-    image: ghcr.io/qetesh/miniflux-ai:latest
-    restart: unless-stopped
+  # Miniflux 主程序
+  app:
+    image: miniflux/miniflux:latest
+    container_name: miniflux-app
+    ports:
+      - "9090:8080"
+    depends_on:
+      db:
+        condition: service_healthy
     environment:
-        TZ: Asia/Shanghai
+      - DATABASE_URL=postgres://${POSTGRES_USER:-miniflux}:${POSTGRES_PASSWORD:-secret}@db/${POSTGRES_DB:-miniflux}?sslmode=disable
+      - BASE_URL=${MINIFLUX_URL:-http://winnas:9090}
+      - RUN_MIGRATIONS=1
+      - CREATE_ADMIN=1
+      - ADMIN_USERNAME=${ADMIN_USERNAME:-admin}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-test123}
+      - TZ=Asia/Shanghai
+    restart: unless-stopped
+    networks:
+      - miniflux-net
+
+  # Miniflux AI 助手 (本项目)
+  ai:
+    # 如果你已经上传到 Docker Hub，请替换为你的镜像:
+    # image: your-username/miniflux-ai:latest
+    image: ghcr.io/qetesh/miniflux-ai:latest
+    container_name: miniflux-ai
+    environment:
+      TZ: Asia/Shanghai
     volumes:
-        - ./config.yml:/app/config.yml
-        - ./runtime:/app/runtime  # Persistent SQLite + WAL files
+      - ./config.yml:/app/config.yml
+      - ./runtime:/app/runtime  # 持久化存储
+    depends_on:
+      - app
+    restart: unless-stopped
+    networks:
+      - miniflux-net
+
+  # RSSHub / RSS-Bridge (可选)
+  rss-bridge:
+    image: rssbridge/rss-bridge:latest
+    container_name: rss-bridge
+    volumes:
+      - ./rss-bridge-config:/app/bridges
+    ports:
+      - "3000:80"
+    networks:
+      - miniflux-net
+    restart: unless-stopped
+
+volumes:
+  miniflux-db:
+    driver: local
+
+networks:
+  miniflux-net:
+    driver: bridge
