@@ -1,0 +1,39 @@
+# Git
+.git
+.gitignore
+.github
+
+# Python
+__pycache__
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+
+# IDEs
+.idea
+.vscode
+*.swp
+*.swo
+
+# Project specific
+tests/
+docs/
+scripts/
+tools/
+debug-ui/
+nginx/
+.sisyphus/
+
+# Configs & Secrets (IMPORTANT)
+config.yml
+config.sample.*.yml
+docker-compose*.yml
+Dockerfile
+*.md
+LICENSE
+TODO.md
+requirements-dev.txt
