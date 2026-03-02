@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from common.config import Config
+from app.infrastructure.config import Config
 
 
 def test_from_dict():

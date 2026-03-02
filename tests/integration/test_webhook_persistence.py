@@ -3,9 +3,9 @@ import hmac
 import json
 from types import SimpleNamespace
 
-from common.task_store import TASK_PENDING
-from common.task_store_sqlite import TaskStoreSQLite
-from myapp import create_app
+from app.domain.task_store import TASK_PENDING
+from app.infrastructure.task_store_sqlite import TaskStoreSQLite
+from app.interfaces.http import create_app
 
 
 def test_webhook_persists_pending_task(tmp_path, base_config, dummy_logger):

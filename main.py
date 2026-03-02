@@ -6,21 +6,21 @@ import traceback
 
 import schedule
 
-from adapters import LLMGateway, MinifluxGateway
-from adapters.protocols import LLMClientProtocol, MinifluxGatewayProtocol
-from common.ai_news_repository_sqlite import AiNewsRepositorySQLite
-from common.config import Config
-from common.entries_repository_sqlite import EntriesRepositorySQLite
-from common.logger import get_logger
-from common.task_store_sqlite import TaskStoreSQLite
-from core.ai_news_helpers import has_ai_news_feed
-from core.fetch_unread_entries import fetch_unread_entries
-from core.generate_daily_news import generate_daily_news
-from core.llm_pool import LLMRequestPool
-from core.process_entries import InMemoryProcessedNewsIds, build_rate_limited_processor
-from core.process_entries_batch import process_entries_batch
-from core.task_worker import PermanentTaskError, TaskWorker
-from myapp import create_app
+from app.infrastructure.llm_gateway import LLMGateway
+from app.infrastructure.miniflux_gateway import MinifluxGateway
+from app.infrastructure.protocols import LLMClientProtocol, MinifluxGatewayProtocol
+from app.infrastructure.ai_news_repository_sqlite import AiNewsRepositorySQLite
+from app.infrastructure.config import Config
+from app.infrastructure.entries_repository_sqlite import EntriesRepositorySQLite
+from app.observability.trace import get_logger
+from app.infrastructure.task_store_sqlite import TaskStoreSQLite
+from app.domain.ai_news_helpers import has_ai_news_feed
+from app.application.ingest_service import fetch_unread_entries, process_entries_batch
+from app.application.news_service import generate_daily_news
+from app.application.llm_pool import LLMRequestPool
+from app.domain.processor import InMemoryProcessedNewsIds, build_rate_limited_processor
+from app.application.worker_service import PermanentTaskError, TaskWorker
+from app.interfaces.http import create_app
 
 
 def resolve_entry_mode(config):

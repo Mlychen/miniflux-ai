@@ -53,8 +53,8 @@ def _resolve_storage(config):
 
 
 def _build_repositories(config):
-    from common.entries_repository_sqlite import EntriesRepositorySQLite
-    from common.ai_news_repository_sqlite import AiNewsRepositorySQLite
+    from app.infrastructure.entries_repository_sqlite import EntriesRepositorySQLite
+    from app.infrastructure.ai_news_repository_sqlite import AiNewsRepositorySQLite
 
     sqlite_path = _resolve_storage(config)
     entries_repo = EntriesRepositorySQLite(path=sqlite_path)
@@ -69,13 +69,13 @@ def _summarize_storage_size(storage_path: str):
 
 
 def run_batch_scenario(config_path: str, entries: int, content_bytes: int, max_workers: int):
-    from common.config import Config
-    from common.logger import get_logger
-    from core.process_entries import (
+    from app.infrastructure.config import Config
+    from app.observability.trace import get_logger
+    from app.domain.processor import (
         InMemoryProcessedNewsIds,
         build_rate_limited_processor,
     )
-    from core.process_entries_batch import process_entries_batch
+    from app.application.ingest_service import process_entries_batch
 
     config = Config.from_file(config_path)
     logger = get_logger(config.log_level)
@@ -133,9 +133,9 @@ def run_batch_scenario(config_path: str, entries: int, content_bytes: int, max_w
 
 
 def run_ai_news_scenario(config_path: str, entries: int, content_bytes: int, simulate_llm_delay: int = 0):
-    from common.config import Config
-    from common.logger import get_logger
-    from core.generate_daily_news import generate_daily_news
+    from app.infrastructure.config import Config
+    from app.observability.trace import get_logger
+    from app.application.news_service import generate_daily_news
 
     config = Config.from_file(config_path)
     logger = get_logger(config.log_level)

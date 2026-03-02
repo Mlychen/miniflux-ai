@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from common.ai_news_repository_sqlite import AiNewsRepositorySQLite
+from app.infrastructure.ai_news_repository_sqlite import AiNewsRepositorySQLite
 
 
 TEST_DIR = Path(__file__).resolve().parent

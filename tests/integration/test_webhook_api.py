@@ -4,9 +4,9 @@ import json
 from pathlib import Path
 
 from assert_utils import AssertMixin
-from common.config import Config
-from common.task_store_sqlite import TaskStoreSQLite
-from myapp import create_app
+from app.infrastructure.config import Config
+from app.infrastructure.task_store_sqlite import TaskStoreSQLite
+from app.interfaces.http import create_app
 
 
 class DummyLogger:
@@ -257,7 +257,9 @@ class TestWebhookTaskStoreIntegration(AssertMixin):
 
         tasks = task_store.list_tasks()
         self.assertEqual(len(tasks), 2)
-        self.assertTrue(all(task.trace_id == result["trace_id"] for task in tasks))
+        # 所有任务共享同一个 trace_id
+        for task in tasks:
+            self.assertEqual(task.trace_id, result["trace_id"])
 
     def test_webhook_task_store_deduplicates_by_canonical_id(self):
         secret = "test-secret"
@@ -342,6 +344,7 @@ class TestWebhookTaskStoreIntegration(AssertMixin):
         self.assertEqual(result["trace_id"], "trace-from-payload")
         tasks = task_store.list_tasks()
         self.assertEqual(len(tasks), 1)
+        # trace_id 直接使用 payload 传入的值
         self.assertEqual(tasks[0].trace_id, "trace-from-payload")
 
     def test_webhook_task_store_header_trace_id_overrides_payload_trace_id(self):
@@ -379,6 +382,7 @@ class TestWebhookTaskStoreIntegration(AssertMixin):
         self.assertEqual(result["trace_id"], "trace-from-header")
         tasks = task_store.list_tasks()
         self.assertEqual(len(tasks), 1)
+        # trace_id 直接使用 header 传入的值
         self.assertEqual(tasks[0].trace_id, "trace-from-header")
 
     def test_webhook_returns_500_when_task_store_persist_fails(self):

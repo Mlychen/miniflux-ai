@@ -2,7 +2,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from adapters.llm_gateway import LLMGateway
+from app.infrastructure.llm_gateway import LLMGateway
 
 
 def make_cfg(provider="openai"):

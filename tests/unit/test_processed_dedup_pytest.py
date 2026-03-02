@@ -1,4 +1,4 @@
-from core.process_entries import InMemoryProcessedNewsIds
+from app.domain.processor import InMemoryProcessedNewsIds
 
 
 def test_in_memory_processed_ids_dedup():

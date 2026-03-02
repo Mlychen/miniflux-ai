@@ -1,8 +1,8 @@
 import time
 
-from common.task_store import TASK_DONE, TASK_RETRYABLE
-from common.task_store_sqlite import TaskStoreSQLite
-from core.task_worker import TaskWorker
+from app.domain.task_store import TASK_DONE, TASK_RETRYABLE
+from app.infrastructure.task_store_sqlite import TaskStoreSQLite
+from app.application.worker_service import TaskWorker
 
 
 def wait_for_status(task_store, task_id, status, timeout=3.0):

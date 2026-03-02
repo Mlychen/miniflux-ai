@@ -2,8 +2,8 @@ import time
 
 import psutil
 
-from common.task_store_sqlite import TaskStoreSQLite
-from core.task_worker import TaskWorker
+from app.infrastructure.task_store_sqlite import TaskStoreSQLite
+from app.application.worker_service import TaskWorker
 
 
 def test_task_worker_idle_backoff_increases(tmp_path, monkeypatch):

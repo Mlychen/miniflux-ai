@@ -1,4 +1,4 @@
-from core.entry_rendering import render_agent_response
+from app.domain.entry_rendering import render_agent_response
 
 
 def test_render_blockquote_style():

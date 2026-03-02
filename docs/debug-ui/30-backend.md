@@ -9,9 +9,9 @@
 - `POST /miniflux-ai/manual-process`
 - body：
   - `{"entry_id": 123}`
-  - 或 `{"entry_id": 123, "trace_id": "32位hex字符串"}`
+  - 或 `{"entry_id": 123, "trace_id": "32位hex字符串"}`（trace_id 为本次处理链路 ID，可选）
 - 返回：
-  - 200：`{"status":"ok","entry_id":"123","trace_id":"..."}`
+  - 200：`{"status":"ok","entry_id":"123","trace_id":"..."}`（trace_id 为本次处理链路 ID）
   - 400：缺少/非法 entry_id
   - 404：entry 不存在
   - 500：处理失败
@@ -107,6 +107,8 @@ items 每项通常包含：
 - 若未传入，后端会自动生成 `trace_id`
 - 响应始终返回 `trace_id`
 - 处理追踪日志统一带该 `trace_id`
+
+语义：这里的 `trace_id` 是本次手动处理的处理链路 ID。
 
 用途：Debug UI 点击一次触发后，可直接按 `trace_id` 查询完整处理链路。
 

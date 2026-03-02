@@ -1,9 +1,9 @@
 from pathlib import Path
 
 from assert_utils import AssertMixin
-from common.task_error_key import normalize_error_key
-from common.task_store import TASK_DEAD, TASK_DONE, TASK_RETRYABLE, TASK_RUNNING
-from common.task_store_sqlite import TaskStoreSQLite
+from app.domain.task_error_key import normalize_error_key
+from app.domain.task_store import TASK_DEAD, TASK_DONE, TASK_RETRYABLE, TASK_RUNNING
+from app.infrastructure.task_store_sqlite import TaskStoreSQLite
 
 
 TEST_DIR = Path(__file__).resolve().parent
@@ -408,4 +408,3 @@ class TestTaskStoreSQLite(AssertMixin):
         self.assertEqual(affected, 2)
         self.assertEqual(store.get_task(r1.id).status, "pending")
         self.assertEqual(store.get_task(d1.id).status, "pending")
-

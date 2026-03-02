@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from common.entries_repository_sqlite import EntriesRepositorySQLite
+from app.infrastructure.entries_repository_sqlite import EntriesRepositorySQLite
 
 
 TEST_DIR = Path(__file__).resolve().parent

@@ -2,7 +2,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from common.config import Config
+from app.infrastructure.config import Config
 
 @pytest.fixture
 def base_config():

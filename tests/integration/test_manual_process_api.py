@@ -4,8 +4,8 @@ from unittest.mock import MagicMock, patch
 import miniflux
 import requests
 
-from common.config import Config
-from myapp import create_app
+from app.infrastructure.config import Config
+from app.interfaces.http import create_app
 
 
 class DummyLogger:
@@ -139,7 +139,7 @@ def test_returns_ok_when_processing_succeeds():
         entry_processor=lambda *a, **k: None,
     )
 
-    with patch("myapp.process_entries_batch", mock_batch):
+    with patch("app.interfaces.http.process_entries_batch", mock_batch):
         with app.test_client() as client:
             response = client.post(
                 "/miniflux-ai/manual-process",

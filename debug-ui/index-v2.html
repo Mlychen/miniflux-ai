@@ -1,0 +1,492 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>miniflux-ai Debug Console v2</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="./src/styles/main.css" />
+  </head>
+  <body>
+    <!-- 顶部导航栏 -->
+    <header class="header">
+      <div class="header-content">
+        <div class="brand">
+          <div class="brand-icon">AI</div>
+          <div>
+            <div class="brand-title">miniflux-ai</div>
+            <div class="brand-subtitle">Debug Console v2</div>
+          </div>
+        </div>
+        <div class="status-bar">
+          <div class="status-item">
+            <span class="status-dot" id="statusDot"></span>
+            <span id="statusText">就绪</span>
+          </div>
+          <div class="status-item">
+            <span>Origin:</span>
+            <span class="mono" id="origin" style="margin-left: 4px;"></span>
+          </div>
+          <div class="status-item">
+            <span>最近请求:</span>
+            <span class="mono" id="last" style="margin-left: 4px;">-</span>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <!-- 标签栏 -->
+    <nav class="tabs">
+      <button class="tab active" data-tab="quick">快速操作</button>
+      <button class="tab" data-tab="data">数据查看</button>
+      <button class="tab" data-tab="tasks">任务管理</button>
+      <button class="tab" data-tab="system">系统状态</button>
+    </nav>
+
+    <!-- 主内容区 -->
+    <main class="main">
+      <!-- 快速操作标签 -->
+      <div class="tab-content active" data-tab="quick">
+        <div class="grid">
+          <!-- 手动处理卡片 -->
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title">
+                <svg class="card-icon" viewBox="0 0 16 16" fill="currentColor">
+                  <path d="M10.478 1.647a.5.5 0 10-.956-.294l-4 13a.5.5 0 00.956.294l4-13zM4 10a.5.5 0 01-.5-.5V1.73A2.5 2.5 0 015.207 0h5.586A2.5 2.5 0 0113.207 2.5v3a.5.5 0 01-1 0v-3a1.5 1.5 0 00-1.414-1.5H5.207A1.5 1.5 0 004.207 2.5V9.5A.5.5 0 014 10z"/>
+                </svg>
+                手动处理
+              </div>
+            </div>
+            <div class="card-body">
+              <div class="input-group">
+                <label class="input-label" for="entryId">Entry ID</label>
+                <input class="input" id="entryId" type="text" inputmode="numeric" placeholder="例如 123" />
+                <button class="btn btn-primary" id="btnManual">
+                  <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
+                    <path d="M11.742 5.5a.5.5 0 10-.744.67l1.902 2.113-1.902 2.113a.5.5 0 00.744.67l2.25-2.5a.5.5 0 000-.67l-2.25-2.5zM2 8.5a6.5 6.5 0 1111.32 4.33.5.5 0 11-.64-.766A5.5 5.5 0 103 8.5a.5.5 0 01-1 0z"/>
+                  </svg>
+                  触发处理
+                </button>
+              </div>
+              <pre class="code-block mono" id="outManual"></pre>
+            </div>
+          </div>
+
+          <!-- 处理追踪卡片 -->
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title">
+                <svg class="card-icon" viewBox="0 0 16 16" fill="currentColor">
+                  <path d="M8.5 1a1.5 1.5 0 100 3 1.5 1.5 0 000-3zM11 3.5a.5.5 0 01.5-.5h3a.5.5 0 01.5.5v10a.5.5 0 01-.5.5h-3a.5.5 0 01-.5-.5v-10zM2 3.5a.5.5 0 01.5-.5h3a.5.5 0 01.5.5v10a.5.5 0 01-.5.5h-3a.5.5 0 01-.5-.5v-10z"/>
+                </svg>
+                处理追踪
+              </div>
+            </div>
+            <div class="card-body">
+              <div class="input-group">
+                <label class="input-label" for="traceEntryId">Trace ID / Entry ID</label>
+                <input class="input" id="traceEntryId" type="text" placeholder="UUID hex 或 Entry ID" style="min-width: 250px;" />
+                <button class="btn btn-primary" id="btnTrace">查询</button>
+                <button class="btn" id="btnClearTrace">清空</button>
+                <button class="btn" id="btnBackToTraceList" style="display: none;">
+                  <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
+                    <path fill-rule="evenodd" d="M12 8a.5.5 0 0 1-.5.5H5.707l2.147 2.146a.5.5 0 0 1-.708.708l-3-3a.5.5 0 0 1 0-.708l3-3a.5.5 0 1 1 .708.708L5.707 7.5H11.5a.5.5 0 0 1 .5.5z"/>
+                  </svg>
+                  返回列表
+                </button>
+              </div>
+              <div id="traceList" style="display: none; margin-top: var(--space-md);">
+                 <div style="font-size: 13px; color: var(--text-secondary); margin-bottom: var(--space-sm);">
+                   找到多个处理记录，请选择查看：
+                 </div>
+                 <div class="table-container" style="margin-top: 0; max-height: 200px;">
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>Trace ID</th>
+                          <th>状态</th>
+                          <th>时间</th>
+                          <th>操作</th>
+                        </tr>
+                      </thead>
+                      <tbody id="traceListBody"></tbody>
+                    </table>
+                 </div>
+              </div>
+              <div id="traceSummary" style="display: none; margin-top: var(--space-md);">
+                <div class="stats-row">
+                  <div class="stat">
+                    <span class="stat-label">状态</span>
+                    <span class="stat-value" id="traceStatus"></span>
+                  </div>
+                  <div class="stat">
+                    <span class="stat-label">总耗时</span>
+                    <span class="stat-value" id="traceDuration"></span>
+                  </div>
+                  <div class="stat">
+                    <span class="stat-label">处理阶段</span>
+                    <span class="stat-value" id="traceStagesCount"></span>
+                  </div>
+                </div>
+                <div class="timeline-detail-row" style="margin-top: var(--space-sm);">
+                  <div class="timeline-detail-item">
+                    <span class="timeline-detail-label">Canonical ID:</span>
+                    <span class="timeline-detail-value" id="traceCanonicalId"></span>
+                  </div>
+                  <div class="timeline-detail-item">
+                    <span class="timeline-detail-label">类别:</span>
+                    <span class="timeline-detail-value" id="traceCategory"></span>
+                  </div>
+                </div>
+              </div>
+              <div id="traceTimeline" class="timeline" style="display: none; margin-top: var(--space-md); max-height: 400px; overflow-y: auto;"></div>
+              <pre class="code-block mono" id="outTrace"></pre>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 数据查看标签 -->
+      <div class="tab-content" data-tab="data">
+        <div class="grid">
+          <!-- 已处理条目卡片 -->
+          <div class="card full">
+            <div class="card-header">
+              <div class="card-title">
+                <svg class="card-icon" viewBox="0 0 16 16" fill="currentColor">
+                  <path d="M14 1a1 1 0 011 1v12a1 1 0 01-1 1H2a1 1 0 01-1-1V2a1 1 0 011-1h12zM2 0a2 2 0 00-2 2v12a2 2 0 002 2h12a2 2 0 002-2V2a2 2 0 00-2-2H2z"/>
+                  <path d="M10.97 4.97a.75.75 0 011.071 1.05l-3.992 4.99a.75.75 0 01-1.08.02L4.324 8.384a.75.75 0 111.06-1.06l2.094 2.093 3.473-4.425a.235.235 0 01.02-.022z"/>
+                </svg>
+                已处理条目
+              </div>
+              <div class="input-group">
+                <label class="input-label" for="processedLimit">Limit</label>
+                <input class="input" id="processedLimit" type="text" inputmode="numeric" value="100" style="width: 80px" />
+                <label class="input-label" for="processedOffset">Offset</label>
+                <input class="input" id="processedOffset" type="text" inputmode="numeric" value="0" style="width: 80px" />
+                <button class="btn btn-primary" id="btnProcessed">加载</button>
+                <button class="btn" id="btnRefreshProcessed">刷新</button>
+              </div>
+            </div>
+            <div class="card-body" style="padding: 0;">
+              <div style="padding: var(--space-md); border-bottom: 1px solid var(--border-secondary);">
+                <div class="stats-row">
+                  <div class="stat">
+                    <span class="stat-label">总数</span>
+                    <span class="stat-value" id="processedTotal">0</span>
+                  </div>
+                  <div class="stat">
+                    <span class="stat-label">当前范围</span>
+                    <span class="stat-value" id="processedRange">0-0</span>
+                  </div>
+                  <div class="stat">
+                    <span class="stat-label">显示数量</span>
+                    <span class="stat-value" id="processedCount">0</span>
+                  </div>
+                </div>
+              </div>
+              <div class="table-container">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>ID</th>
+                      <th>Canonical ID</th>
+                      <th>Webhook Trace ID</th>
+                      <th>标题</th>
+                      <th>类别</th>
+                      <th>发布时间</th>
+                      <th>URL</th>
+                      <th>操作</th>
+                    </tr>
+                  </thead>
+                  <tbody id="processedBody">
+                    <tr>
+                      <td colspan="8" class="empty-state">
+                        <div class="empty-state-icon">📭</div>
+                        <div class="empty-state-text">点击"加载"按钮查看已处理条目</div>
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+              <pre class="code-block mono" id="outProcessed" style="border-top: none; border-radius: 0 0 var(--radius-md) var(--radius-md);"></pre>
+            </div>
+          </div>
+
+          <!-- 处理历史卡片 -->
+          <div class="card full">
+            <div class="card-header">
+              <div class="card-title">
+                <svg class="card-icon" viewBox="0 0 16 16" fill="currentColor">
+                  <path d="M9 8a1 1 0 100-2 1 1 0 000 2zM6 6.5a1.5 1.5 0 11-3 0 1.5 1.5 0 013 0zM15 8a6 6 0 11-12 0 6 6 0 0112 0zM8.5 4a.5.5 0 00-1 0v3.5a.5.5 0 00.276.448l2.5 1.25a.5.5 0 10.448-.896L8.5 7.25V4z"/>
+                </svg>
+                处理历史
+              </div>
+              <div class="input-group">
+                <label class="input-label" for="historyLimit">Limit</label>
+                <input class="input" id="historyLimit" type="text" inputmode="numeric" value="20" style="width: 80px" />
+                <button class="btn btn-primary" id="btnHistory">加载</button>
+                <button class="btn" id="btnRefreshHistory">刷新</button>
+              </div>
+            </div>
+            <div class="card-body" style="padding: 0;">
+              <div style="padding: var(--space-md); border-bottom: 1px solid var(--border-secondary);">
+                <div class="input-group" style="margin-bottom: var(--space-sm);">
+                  <label class="input-label" for="historySearchQuery">搜索条目</label>
+                  <input class="input" id="historySearchQuery" type="text" placeholder="输入 entry_id 或 canonical_id" style="min-width: 220px;" />
+                  <button class="btn btn-primary" id="btnHistorySearch">
+                    <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
+                      <path d="M11.742 10.344a6.5 6.5 0 1 0-1.397 1.398h-.001c.03.04.062.078.098.115l3.85 3.85a1 1 0 0 0 1.415-1.414l-3.85-3.85a1.007 1.007 0 0 0-.115-.1zM12 6.5a5.5 5.5 0 1 1-11 0 5.5 5.5 0 0 1 11 0z"/>
+                    </svg>
+                    搜索
+                  </button>
+                  <button class="btn" id="btnHistorySearchClear">清除</button>
+                  <span id="historySearchStatus" style="margin-left: 8px; font-size: 12px; color: var(--text-secondary);"></span>
+                </div>
+                <div class="stats-row">
+                  <div class="stat">
+                    <span class="stat-label">总数</span>
+                    <span class="stat-value" id="historyTotal">0</span>
+                  </div>
+                  <div class="stat">
+                    <span class="stat-label">显示数量</span>
+                    <span class="stat-value" id="historyCount">0</span>
+                  </div>
+                </div>
+              </div>
+              <div class="table-container">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Trace ID</th>
+                      <th>批次状态</th>
+                      <th>条目统计 (成功/失败/总数)</th>
+                      <th>持续时间</th>
+                      <th>开始时间</th>
+                      <th>操作</th>
+                    </tr>
+                  </thead>
+                  <tbody id="historyBody">
+                    <tr>
+                      <td colspan="6" class="empty-state">
+                        <div class="empty-state-icon">📭</div>
+                        <div class="empty-state-text">点击"加载"按钮查看处理历史</div>
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+              <pre class="code-block mono" id="outHistory"></pre>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 任务管理标签 -->
+      <div class="tab-content" data-tab="tasks">
+        <div class="grid">
+          <!-- 任务排障卡片 -->
+          <div class="card full">
+            <div class="card-header">
+              <div class="card-title">
+                <svg class="card-icon" viewBox="0 0 16 16" fill="currentColor">
+                  <path d="M7.48 1.677a.75.75 0 011.04 0l6.25 5.75a.75.75 0 01.033 1.072l-6 6.5a.75.75 0 01-1.096 0l-6-6.5a.75.75 0 01.033-1.072l6.25-5.75zM8 3.249L3.307 7.57 8 12.653l4.693-5.083L8 3.249z"/>
+                </svg>
+                任务排障
+              </div>
+              <div class="input-group">
+                <label class="input-label" for="taskStatusFilter">状态</label>
+                <select class="input" id="taskStatusFilter" style="width: 120px;">
+                  <option value="">全部失败</option>
+                  <option value="retryable">retryable</option>
+                  <option value="dead">dead</option>
+                </select>
+                <label class="input-label" for="taskErrorFilter">错误筛选</label>
+                <input class="input" id="taskErrorFilter" type="text" placeholder="error 或 error_key" style="min-width: 220px;" />
+                <label class="input-label" for="taskGroupLimit">Limit</label>
+                <input class="input" id="taskGroupLimit" type="text" inputmode="numeric" value="50" style="width: 80px;" />
+                <button class="btn btn-primary" id="btnTaskGroupsLoad">加载分组</button>
+                <button class="btn" id="btnTaskFilterRequeue">按筛选重入队</button>
+                <button class="btn btn-danger" id="btnTaskGroupRequeue">重入队当前分组</button>
+              </div>
+            </div>
+            <div class="card-body" style="padding: 0;">
+              <div style="padding: var(--space-md); border-bottom: 1px solid var(--border-secondary);">
+                <div class="stats-row">
+                  <div class="stat">
+                    <span class="stat-label">分组总数</span>
+                    <span class="stat-value" id="taskGroupsTotal">0</span>
+                  </div>
+                  <div class="stat">
+                    <span class="stat-label">当前返回</span>
+                    <span class="stat-value" id="taskGroupsCount">0</span>
+                  </div>
+                  <div class="stat">
+                    <span class="stat-label">当前分组</span>
+                    <span class="stat-value mono" id="taskCurrentGroup">(none)</span>
+                  </div>
+                </div>
+              </div>
+              <div class="table-container">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Status</th>
+                      <th>Error Key</th>
+                      <th>Example Error</th>
+                      <th>Count</th>
+                      <th>Latest Updated</th>
+                      <th>Oldest Created</th>
+                      <th>操作</th>
+                    </tr>
+                  </thead>
+                  <tbody id="taskGroupsBody">
+                    <tr>
+                      <td colspan="7" class="empty-state">
+                        <div class="empty-state-icon">🧭</div>
+                        <div class="empty-state-text">点击"加载分组"查看失败分组</div>
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+              <div style="padding: var(--space-md); border-top: 1px solid var(--border-secondary); border-bottom: 1px solid var(--border-secondary);">
+                <div class="input-group">
+                  <label class="input-label" for="taskSampleLimit">样本 Limit</label>
+                  <input class="input" id="taskSampleLimit" type="text" inputmode="numeric" value="20" style="width: 80px;" />
+                  <label class="input-label" for="taskSampleOffset">Offset</label>
+                  <input class="input" id="taskSampleOffset" type="text" inputmode="numeric" value="0" style="width: 80px;" />
+                  <label class="input-label" for="taskSampleIncludePayload" style="display:flex; align-items:center; gap:6px;">
+                    <input id="taskSampleIncludePayload" type="checkbox" />
+                    包含 payload
+                  </label>
+                  <button class="btn" id="btnTaskSamplesLoad">加载任务样本</button>
+                  <span class="stat">
+                    <span class="stat-label">任务总数</span>
+                    <span class="stat-value" id="taskSamplesTotal">0</span>
+                  </span>
+                  <span class="stat">
+                    <span class="stat-label">当前返回</span>
+                    <span class="stat-value" id="taskSamplesCount">0</span>
+                  </span>
+                </div>
+              </div>
+              <div class="table-container">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>ID</th>
+                      <th>Status</th>
+                      <th>Attempts</th>
+                      <th>Error Key</th>
+                      <th>Webhook Trace ID</th>
+                      <th>Updated</th>
+                      <th>操作</th>
+                    </tr>
+                  </thead>
+                  <tbody id="taskSamplesBody">
+                    <tr>
+                      <td colspan="7" class="empty-state">
+                        <div class="empty-state-icon">📋</div>
+                        <div class="empty-state-text">先选择失败分组，再加载任务样本</div>
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+              <div style="padding: var(--space-md); border-top: 1px solid var(--border-secondary);">
+                <div class="input-group">
+                  <label class="input-label" for="taskDetailId">Task ID</label>
+                  <input class="input" id="taskDetailId" type="text" inputmode="numeric" placeholder="例如 123" style="width: 120px;" />
+                  <button class="btn" id="btnTaskDetailLoad">查看任务详情</button>
+                </div>
+              </div>
+              <pre class="code-block mono" id="outTaskOps" style="border-top: none; border-radius: 0 0 var(--radius-md) var(--radius-md);"></pre>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 系统状态标签 -->
+      <div class="tab-content" data-tab="system">
+        <div class="grid">
+          <!-- LLM 指标卡片 -->
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title">
+                <svg class="card-icon" viewBox="0 0 16 16" fill="currentColor">
+                  <path d="M0 4.5a.5.5 0 01.5-.5h1a.5.5 0 01.5.5v1a.5.5 0 01-.5.5h-1a.5.5 0 01-.5-.5v-1zm3 0a.5.5 0 01.5-.5h1a.5.5 0 01.5.5v1a.5.5 0 01-.5.5h-1a.5.5 0 01-.5-.5v-1zm3.5-.5a.5.5 0 00-.5.5v1a.5.5 0 00.5.5h1a.5.5 0 00.5-.5v-1a.5.5 0 00-.5-.5h-1zm3.5.5a.5.5 0 01.5-.5h1a.5.5 0 01.5.5v1a.5.5 0 01-.5.5h-1a.5.5 0 01-.5-.5v-1zM0 9.5a.5.5 0 01.5-.5h1a.5.5 0 01.5.5v1a.5.5 0 01-.5.5h-1a.5.5 0 01-.5-.5v-1zm3 0a.5.5 0 01.5-.5h1a.5.5 0 01.5.5v1a.5.5 0 01-.5.5h-1a.5.5 0 01-.5-.5v-1zm3.5-.5a.5.5 0 00-.5.5v1a.5.5 0 00.5.5h1a.5.5 0 00.5-.5v-1a.5.5 0 00-.5-.5h-1zm3.5.5a.5.5 0 01.5-.5h1a.5.5 0 01.5.5v1a.5.5 0 01-.5.5h-1a.5.5 0 01-.5-.5v-1z"/>
+                  <path d="M1.5 7a.5.5 0 01.5-.5h6a.5.5 0 010 1H2a.5.5 0 01-.5-.5zM0 11.5a.5.5 0 01.5-.5h6a.5.5 0 010 1H2a.5.5 0 01-.5-.5z"/>
+                </svg>
+                LLM 指标
+              </div>
+            </div>
+            <div class="card-body">
+              <div class="input-group">
+                <button class="btn" id="btnMetrics">
+                  <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
+                    <path d="M11.536 3.464a5 5 0 010 7.072.5.5 0 11-.708-.707 4 4 0 000-5.656.5.5 0 11.708-.708z"/>
+                    <path d="M15 8a6 6 0 11-12 0 6 6 0 0112 0z"/>
+                    <path d="M8 3a.5.5 0 01.5.5v4a.5.5 0 01-1 0v-4A.5.5 0 018 3z"/>
+                  </svg>
+                  刷新指标
+                </button>
+              </div>
+              <pre class="code-block mono" id="outMetrics"></pre>
+            </div>
+          </div>
+
+          <!-- 失败条目卡片 -->
+          <div class="card full">
+            <div class="card-header">
+              <div class="card-title">
+                <svg class="card-icon" viewBox="0 0 16 16" fill="currentColor">
+                  <path d="M8.982 1.566a1.13 1.13 0 00-1.96 0L.165 13.233c-.457.778.091 1.767.98 1.767h13.713c.889 0 1.438-.99.98-1.767L8.982 1.566zM8 5c.535 0 .954.462.9.995l-.35 3.507a.552.552 0 01-1.1 0L7.1 5.995A.905.905 0 018 5zm.002 6a1 1 0 110 2 1 1 0 010-2z"/>
+                </svg>
+                失败条目
+              </div>
+              <div class="input-group">
+                <label class="input-label" for="failedLimit">Limit</label>
+                <input class="input" id="failedLimit" type="text" inputmode="numeric" value="100" style="width: 80px" />
+                <button class="btn" id="btnFailed">加载</button>
+                <button class="btn btn-danger" id="btnClearAll">清空池</button>
+              </div>
+            </div>
+            <div class="card-body" style="padding: 0;">
+              <div class="table-container">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Entry Key</th>
+                      <th>状态</th>
+                      <th>尝试次数</th>
+                      <th>创建时间</th>
+                      <th>最后尝试</th>
+                      <th>TTL</th>
+                      <th>URL</th>
+                      <th>操作</th>
+                    </tr>
+                  </thead>
+                  <tbody id="failedBody">
+                    <tr>
+                      <td colspan="8" class="empty-state">
+                        <div class="empty-state-icon">⚠️</div>
+                        <div class="empty-state-text">点击"加载"按钮查看失败条目</div>
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+              <pre class="code-block mono" id="outFailed" style="border-top: none; border-radius: 0 0 var(--radius-md) var(--radius-md);"></pre>
+            </div>
+          </div>
+        </div>
+      </div>
+    </main>
+
+    <script type="module" src="./src/main.js"></script>
+  </body>
+</html>

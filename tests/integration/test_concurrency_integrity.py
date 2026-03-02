@@ -3,10 +3,10 @@ import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
-from common.config import Config
-from common.entries_repository_sqlite import EntriesRepositorySQLite
-from core.fetch_unread_entries import fetch_unread_entries
-from core.process_entries import process_entry
+from app.infrastructure.config import Config
+from app.infrastructure.entries_repository_sqlite import EntriesRepositorySQLite
+from app.application.ingest_service import fetch_unread_entries
+from app.domain.processor import process_entry
 
 
 TEST_DIR = Path(__file__).resolve().parent

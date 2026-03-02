@@ -1,7 +1,7 @@
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
-from core.process_entries import process_entry
+from app.domain.processor import process_entry
 
 
 class DummyLogger:
@@ -37,8 +37,8 @@ def test_skip_without_preprocess_when_all_agents_filtered():
         },
     )
 
-    with patch("core.process_entries.trace_logger", MagicMock()), patch(
-        "core.process_entries.preprocess_entry", MagicMock()
+    with patch("app.domain.processor.trace_logger", MagicMock()), patch(
+        "app.domain.processor.preprocess_entry", MagicMock()
     ) as preprocess_mock:
         process_entry(
             miniflux_client=MagicMock(),
@@ -77,7 +77,7 @@ def test_all_agents_filtered_marks_processed_repository():
     processed_repo = MagicMock()
     processed_repo.contains.return_value = False
 
-    with patch("core.process_entries.trace_logger", MagicMock()):
+    with patch("app.domain.processor.trace_logger", MagicMock()):
         process_entry(
             miniflux_client=MagicMock(),
             entry=entry,

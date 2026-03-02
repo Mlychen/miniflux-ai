@@ -1,5 +1,5 @@
-from common.config import Config
-from core.entry_filter import filter_entry
+from app.infrastructure.config import Config
+from app.domain.entry_filter import filter_entry
 
 
 def make_config(agent_cfg):

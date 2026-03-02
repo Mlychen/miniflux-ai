@@ -2,10 +2,10 @@ import json
 import threading
 from types import SimpleNamespace
 
-from common.ai_news_repository_sqlite import AiNewsRepositorySQLite
-from common.config import Config
-from common.entries_repository_sqlite import EntriesRepositorySQLite
-from myapp import create_app
+from app.infrastructure.ai_news_repository_sqlite import AiNewsRepositorySQLite
+from app.infrastructure.config import Config
+from app.infrastructure.entries_repository_sqlite import EntriesRepositorySQLite
+from app.interfaces.http import create_app
 
 
 def build_app(tmp_path, llm_client=None, entries_repo=None):
@@ -103,7 +103,7 @@ def test_process_trace_entry_id_and_trace_detail(tmp_path, monkeypatch):
             "action": "complete",
             "status": "ok",
             "duration_ms": 5000,
-            "data": {"canonical_id": "canon-1"},
+            "data": {"canonical_id": "canon-1", "ai_category": "AI新闻"},
         },
     ]
     write_process_log(tmp_path, records)
@@ -116,12 +116,24 @@ def test_process_trace_entry_id_and_trace_detail(tmp_path, monkeypatch):
     assert list_payload["type"] == "list"
     assert list_payload["traces"][0]["trace_id"] == trace_id
 
-    detail_response = client.get(f"/miniflux-ai/user/process-trace/{trace_id}")
-    detail_payload = detail_response.get_json()
-    assert detail_response.status_code == 200
-    assert detail_payload["type"] == "detail"
-    assert detail_payload["summary"]["entry_id"] == "123"
-    assert len(detail_payload["stages"]) == 2
+    # 按 trace_id 查询现在返回批次模式
+    batch_response = client.get(f"/miniflux-ai/user/process-trace/{trace_id}")
+    batch_payload = batch_response.get_json()
+    assert batch_response.status_code == 200
+    assert batch_payload["type"] == "batch"
+    assert batch_payload["trace_id"] == trace_id
+    assert batch_payload["summary"]["total_entries"] == 1
+    assert batch_payload["summary"]["success_count"] == 1
+    assert len(batch_payload["entries"]) == 1
+    assert batch_payload["entries"][0]["canonical_id"] == "canon-1"
+
+    # 详细 stages 通过 canonical-trace API 获取
+    canonical_response = client.get(f"/miniflux-ai/user/canonical-trace/canon-1?trace_id={trace_id}")
+    canonical_payload = canonical_response.get_json()
+    assert canonical_response.status_code == 200
+    assert canonical_payload["type"] == "detail"
+    assert canonical_payload["canonical_id"] == "canon-1"
+    assert len(canonical_payload["stages"]) == 2
 
 
 def test_process_history(tmp_path, monkeypatch):
@@ -135,7 +147,7 @@ def test_process_history(tmp_path, monkeypatch):
             "action": "start",
             "status": "pending",
             "duration_ms": None,
-            "data": {},
+            "data": {"canonical_id": "canon-1"},
         },
         {
             "timestamp": "2026-02-25T01:00:05Z",
@@ -145,7 +157,7 @@ def test_process_history(tmp_path, monkeypatch):
             "action": "complete",
             "status": "ok",
             "duration_ms": 5000,
-            "data": {},
+            "data": {"canonical_id": "canon-1"},
         },
         {
             "timestamp": "2026-02-25T02:00:00Z",
@@ -155,7 +167,7 @@ def test_process_history(tmp_path, monkeypatch):
             "action": "complete",
             "status": "ok",
             "duration_ms": 3000,
-            "data": {},
+            "data": {"canonical_id": "canon-2"},
         },
     ]
     write_process_log(tmp_path, records)
@@ -166,7 +178,15 @@ def test_process_history(tmp_path, monkeypatch):
     assert response.status_code == 200
     assert payload["status"] == "ok"
     assert payload["total"] == 2
-    assert {row["trace_id"] for row in payload["traces"]} == {"trace-1", "trace-2"}
+    # 新的 API 返回批次聚合信息
+    trace_ids = {row["trace_id"] for row in payload["traces"]}
+    assert trace_ids == {"trace-1", "trace-2"}
+    # 验证批次字段
+    for row in payload["traces"]:
+        assert "total_entries" in row
+        assert "success_count" in row
+        assert "error_count" in row
+        assert "status" in row
 
 
 def test_processed_entries_returns_500_when_repository_fails(tmp_path):

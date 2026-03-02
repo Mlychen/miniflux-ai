@@ -4,11 +4,11 @@ from pathlib import Path
 from unittest.mock import ANY, patch
 
 from assert_utils import AssertMixin
-from common.config import Config
-from common.ai_news_repository_sqlite import AiNewsRepositorySQLite
-from common.entries_repository_sqlite import EntriesRepositorySQLite
-from core.generate_daily_news import generate_daily_news, safe_llm_call
-from core.process_entries import (
+from app.infrastructure.config import Config
+from app.infrastructure.ai_news_repository_sqlite import AiNewsRepositorySQLite
+from app.infrastructure.entries_repository_sqlite import EntriesRepositorySQLite
+from app.application.news_service import generate_daily_news, safe_llm_call
+from app.domain.processor import (
     InMemoryProcessedNewsIds,
     build_rate_limited_processor,
     make_canonical_id,
@@ -647,7 +647,7 @@ class TestDataIntegrity(AssertMixin):
         entry_dupe = dict(entry, id=202, url="https://example.com/c")
 
         entry_processor(client, entry, llm_gateway, logger)
-        with patch("core.process_entries._trace_log") as trace_log:
+        with patch("app.domain.processor._trace_log") as trace_log:
             entry_dupe["_trace_id"] = "trace-dedup-1"
             entry_processor(client, entry_dupe, llm_gateway, logger)
 

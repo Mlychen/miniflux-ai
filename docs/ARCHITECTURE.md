@@ -82,7 +82,7 @@
 - `leased_until`：运行租约过期时间（防止 worker 崩溃后永远卡住）
 - `last_error`：最近错误摘要
 - `error_key`：归一化错误键（用于失败聚类）
-- `trace_id`：可观测关联 ID
+- `trace_id`：处理链路 ID，用于在任务、日志和 Debug UI 之间进行可观测关联
 - `created_at / updated_at`
 
 建议索引：
@@ -137,7 +137,7 @@ pending -> running -> done
 - 成功率与失败率
 - 重试次数分布
 - P50/P95/P99 处理时延
-- 每个任务的 `trace_id` 全链路日志
+- 每个任务的 `trace_id` 全链路日志（同一处理链路内的所有任务与日志共享同一个 trace_id）
 - 失败聚类视图（`status + error_key`）与重入队能力
 
 ## 10. 推荐目录结构（目标）
@@ -165,36 +165,3 @@ app/
     trace.py
     metrics.py
 ```
-
-## 11. 分阶段迁移（建议顺序）
-
-1. Phase 1：引入 `TaskStore` 与任务状态机（不改现有业务处理逻辑）。
-2. Phase 2：webhook 从“入内存队列”改为“持久化任务 + 投递 task_id”。
-3. Phase 3：worker 按状态机执行，并接管重试/死信。
-4. Phase 4：`process_entry` 收敛为纯处理函数，删除状态编排逻辑。
-5. Phase 5：补齐指标与告警，做压力测试和参数调优。
-
-## 12. 当前实现与目标关系
-
-- 当前实现可作为过渡版本（快速可用）。
-- 目标架构用于提升：可恢复性、可定位性、多实例扩展能力与性能上限。
-- 后续代码变更应优先遵循本文的职责边界与状态机设计。
-
-## 13. 当前实现状态（截至 2026-03-01）
-
-当前仓库已完成持久化任务主链路和最小运维闭环：
-
-- `common/task_store.py`：任务状态常量、`TaskRecord`、`TaskStore` 协议。
-- `common/task_store_sqlite.py`：SQLite 任务存储（包含 `error_key` 聚类与重入队能力）。
-- `common/task_error_key.py`：错误归一化逻辑（URL/UUID/数字噪声归一化）。
-- `core/task_worker.py`：后台 worker（claim -> process -> done/retry/dead）。
-- `myapp/webhook_ingest.py`：webhook 主路径仅持久化任务，不回退内存队列/同步处理。
-- `myapp/task_query.py`：任务查询、失败分组、批量/单任务重入队 API。
-- `debug-ui/index.html`：最小任务排障 UI（失败分组查询 + 样本查看 + 重入队）。
-
-相关测试覆盖：
-- `tests/test_task_store_sqlite.py`
-- `tests/test_task_worker.py`
-- `tests/test_task_query_api.py`
-
-说明：当前实现已移除旧 `WebhookQueue` 在 webhook 主路径上的回退语义，任务正确性以持久化状态为准。

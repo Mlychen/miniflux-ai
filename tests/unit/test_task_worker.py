@@ -1,9 +1,9 @@
 from pathlib import Path
 
 from assert_utils import AssertMixin
-from common.task_store import TASK_DEAD, TASK_DONE, TASK_RETRYABLE
-from common.task_store_sqlite import TaskStoreSQLite
-from core.task_worker import PermanentTaskError, TaskWorker
+from app.domain.task_store import TASK_DEAD, TASK_DONE, TASK_RETRYABLE
+from app.infrastructure.task_store_sqlite import TaskStoreSQLite
+from app.application.worker_service import PermanentTaskError, TaskWorker
 
 
 TEST_DIR = Path(__file__).resolve().parent

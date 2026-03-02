@@ -1,7 +1,7 @@
 # tests/test_sqlite_manager.py
 from pathlib import Path
 
-from common.sqlite_manager import DatabaseManager
+from app.infrastructure.sqlite_manager import DatabaseManager
 
 TEST_DIR = Path(__file__).resolve().parent
 TMP_DIR = TEST_DIR / ".tmp_sqlite_manager"

@@ -1,6 +1,6 @@
 from types import SimpleNamespace
 
-from core.llm_pool import LLMRequestPool
+from app.application.llm_pool import LLMRequestPool
 
 
 class DummyGateway:
@@ -77,7 +77,7 @@ def test_entry_ttl_expired():
     def fake_time_fn():
         return fake_time.value
 
-    import core.llm_pool as llm_pool_mod
+    import app.application.llm_pool as llm_pool_mod
 
     original_time = llm_pool_mod.time.time
     llm_pool_mod.time.time = fake_time_fn

@@ -1,7 +1,7 @@
 import threading
 
-from common.config import Config
-from core.process_entries_batch import process_entries_batch
+from app.infrastructure.config import Config
+from app.application.ingest_service import process_entries_batch
 
 
 class DummyLogger:

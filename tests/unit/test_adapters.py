@@ -7,8 +7,8 @@ import pytest
 import requests
 import urllib3
 
-from adapters.llm_gateway import LLMGateway
-from adapters.miniflux_gateway import MinifluxGateway, MinifluxGatewayError
+from app.infrastructure.llm_gateway import LLMGateway
+from app.infrastructure.miniflux_gateway import MinifluxGateway, MinifluxGatewayError
 
 
 class TestMinifluxGateway:
@@ -24,7 +24,7 @@ class TestMinifluxGateway:
     def test_delegates_calls_to_underlying_client(self):
         fake_client = Mock()
 
-        with patch('adapters.miniflux_gateway.miniflux.Client', return_value=fake_client) as ctor:
+        with patch('app.infrastructure.miniflux_gateway.miniflux.Client', return_value=fake_client) as ctor:
             gateway = MinifluxGateway('http://miniflux.local', 'api-key')
 
         ctor.assert_called_once_with("http://miniflux.local", api_key="api-key")
@@ -52,7 +52,7 @@ class TestMinifluxGateway:
         err = miniflux.ResourceNotFound(response)
         fake_client = Mock()
         fake_client.get_entry.side_effect = err
-        with patch("adapters.miniflux_gateway.miniflux.Client", return_value=fake_client):
+        with patch("app.infrastructure.miniflux_gateway.miniflux.Client", return_value=fake_client):
             gateway = MinifluxGateway("http://miniflux.local", "api-key")
             with pytest.raises(MinifluxGatewayError) as ctx:
                 gateway.get_entry(10)
@@ -64,7 +64,7 @@ class TestMinifluxGateway:
         err = miniflux.ClientError(response)
         fake_client = Mock()
         fake_client.get_entries.side_effect = err
-        with patch("adapters.miniflux_gateway.miniflux.Client", return_value=fake_client):
+        with patch("app.infrastructure.miniflux_gateway.miniflux.Client", return_value=fake_client):
             gateway = MinifluxGateway("http://miniflux.local", "api-key")
             with pytest.raises(MinifluxGatewayError) as ctx:
                 gateway.get_entries(status=["unread"])
@@ -74,7 +74,7 @@ class TestMinifluxGateway:
     def test_maps_timeout(self):
         fake_client = Mock()
         fake_client.me.side_effect = TimeoutError("timeout")
-        with patch("adapters.miniflux_gateway.miniflux.Client", return_value=fake_client):
+        with patch("app.infrastructure.miniflux_gateway.miniflux.Client", return_value=fake_client):
             gateway = MinifluxGateway("http://miniflux.local", "api-key")
             with pytest.raises(MinifluxGatewayError) as ctx:
                 gateway.me()
@@ -101,7 +101,7 @@ class TestLLMGateway:
                 {"choices": [{"message": {"content": "ok"}}]},
             )
         )
-        with patch('adapters.llm_gateway.urllib3.PoolManager') as pool_ctor:
+        with patch('app.infrastructure.llm_gateway.urllib3.PoolManager') as pool_ctor:
             pool_ctor.return_value = SimpleNamespace(request=request_mock)
             gateway = LLMGateway(cfg)
             out = gateway.get_result('system prompt', '123456', logger=None)
@@ -145,7 +145,7 @@ class TestLLMGateway:
                 },
             )
         )
-        with patch('adapters.llm_gateway.urllib3.PoolManager') as pool_ctor:
+        with patch('app.infrastructure.llm_gateway.urllib3.PoolManager') as pool_ctor:
             pool_ctor.return_value = SimpleNamespace(request=request_mock)
             gateway = LLMGateway(cfg)
             out = gateway.get_result('system prompt', 'input', logger=None)
@@ -166,7 +166,7 @@ class TestLLMGateway:
                 self._response(200, {"choices": [{"message": {"content": "ok-v1"}}]}),
             ]
         )
-        with patch('adapters.llm_gateway.urllib3.PoolManager') as pool_ctor:
+        with patch('app.infrastructure.llm_gateway.urllib3.PoolManager') as pool_ctor:
             pool_ctor.return_value = SimpleNamespace(request=request_mock)
             gateway = LLMGateway(cfg)
             out = gateway.get_result('system prompt', 'input', logger=None)
@@ -187,7 +187,7 @@ class TestLLMGateway:
             llm_max_length=None,
         )
         request_mock = Mock(return_value=self._response(401, {"error": "unauthorized"}))
-        with patch('adapters.llm_gateway.urllib3.PoolManager') as pool_ctor:
+        with patch('app.infrastructure.llm_gateway.urllib3.PoolManager') as pool_ctor:
             pool_ctor.return_value = SimpleNamespace(request=request_mock)
             gateway = LLMGateway(cfg)
             with pytest.raises(RuntimeError) as ctx:
@@ -213,7 +213,7 @@ class TestLLMGateway:
                 },
             )
         )
-        with patch('adapters.llm_gateway.urllib3.PoolManager') as pool_ctor:
+        with patch('app.infrastructure.llm_gateway.urllib3.PoolManager') as pool_ctor:
             pool_ctor.return_value = SimpleNamespace(request=request_mock)
             gateway = LLMGateway(cfg)
             out = gateway.get_result('${content}', 'hello', logger=None)
@@ -240,7 +240,7 @@ class TestLLMGateway:
             llm_max_length=None,
         )
         request_mock = Mock(return_value=self._response(200, {"candidates": [{}]}))
-        with patch('adapters.llm_gateway.urllib3.PoolManager') as pool_ctor:
+        with patch('app.infrastructure.llm_gateway.urllib3.PoolManager') as pool_ctor:
             pool_ctor.return_value = SimpleNamespace(request=request_mock)
             gateway = LLMGateway(cfg)
             with pytest.raises(RuntimeError) as ctx:

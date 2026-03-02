@@ -1,10 +1,10 @@
-from core.ai_news_helpers import (
+from app.domain.ai_news_helpers import (
     compose_daily_news_content,
     find_ai_news_feed_id,
     has_ai_news_feed,
     is_ai_news_feed_title,
 )
-from core.entry_rendering import build_summary_entry, render_agent_response
+from app.domain.entry_rendering import build_summary_entry, render_agent_response
 
 
 def test_build_summary_entry():

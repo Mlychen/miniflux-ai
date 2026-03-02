@@ -1,11 +1,11 @@
 import threading
 from types import SimpleNamespace
 
-from common.ai_news_repository_sqlite import AiNewsRepositorySQLite
-from common.config import Config
-from common.entries_repository_sqlite import EntriesRepositorySQLite
-from myapp import create_app
-from adapters.miniflux_gateway import MinifluxGatewayError
+from app.infrastructure.ai_news_repository_sqlite import AiNewsRepositorySQLite
+from app.infrastructure.config import Config
+from app.infrastructure.entries_repository_sqlite import EntriesRepositorySQLite
+from app.interfaces.http import create_app
+from app.infrastructure.miniflux_gateway import MinifluxGatewayError
 
 
 def build_app(tmp_path, miniflux_client):

@@ -7,10 +7,10 @@ from flask import current_app
 
 import main
 from assert_utils import AssertMixin
-from common.ai_news_repository_sqlite import AiNewsRepositorySQLite
-from common.entries_repository_sqlite import EntriesRepositorySQLite
-from myapp import create_app
-from myapp.services import AppServices, get_app_services
+from app.infrastructure.ai_news_repository_sqlite import AiNewsRepositorySQLite
+from app.infrastructure.entries_repository_sqlite import EntriesRepositorySQLite
+from app.interfaces.http import create_app
+from app.interfaces.http.services import AppServices, get_app_services
 
 TEST_DIR = Path(__file__).resolve().parent
 TMP_DIR = TEST_DIR / ".tmp_service_containers"
@@ -123,4 +123,3 @@ class TestServiceContainers(AssertMixin):
         self.assertIsInstance(services.ai_news_repository, AiNewsRepositorySQLite)
         self.assertEqual(services.entries_repository.db.path, 'runtime/miniflux_ai.db')
         self.assertEqual(services.ai_news_repository.db.path, 'runtime/miniflux_ai.db')
-

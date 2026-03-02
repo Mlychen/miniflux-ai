@@ -1,11 +1,11 @@
 from pathlib import Path
 
 from assert_utils import AssertMixin
-from common.config import Config
-from common.task_error_key import normalize_error_key
-from common.task_store import TASK_DONE
-from common.task_store_sqlite import TaskStoreSQLite
-from myapp import create_app
+from app.infrastructure.config import Config
+from app.domain.task_error_key import normalize_error_key
+from app.domain.task_store import TASK_DONE
+from app.infrastructure.task_store_sqlite import TaskStoreSQLite
+from app.interfaces.http import create_app
 
 
 TEST_DIR = Path(__file__).resolve().parent
