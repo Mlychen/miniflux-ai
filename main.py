@@ -212,7 +212,7 @@ def my_flask(services, entry_mode):
             claim_batch_size=getattr(config, "miniflux_task_claim_batch_size", 20),
             lease_seconds=getattr(config, "miniflux_task_lease_seconds", 60),
             poll_interval=getattr(config, "miniflux_task_poll_interval", 1.0),
-            retry_delay_seconds=getattr(config, "miniflux_task_retry_delay_seconds", 30),
+            base_retry_delay_seconds=getattr(config, "miniflux_task_retry_delay_seconds", 30),
             logger=logger,
         )
         task_processor_fn = create_task_record_processor(services)

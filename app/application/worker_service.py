@@ -14,7 +14,7 @@ class TaskWorker:
         claim_batch_size: int = 20,
         lease_seconds: int = 60,
         poll_interval: float = 1.0,
-        retry_delay_seconds: int = 30,
+        base_retry_delay_seconds: int = 30,
         logger=None,
     ):
         self._task_store = task_store
@@ -22,7 +22,7 @@ class TaskWorker:
         self._claim_batch_size = max(1, int(claim_batch_size))
         self._lease_seconds = max(1, int(lease_seconds))
         self._poll_interval = max(0.05, float(poll_interval))
-        self._retry_delay_seconds = max(0, int(retry_delay_seconds))
+        self._base_retry_delay_seconds = max(0, int(base_retry_delay_seconds))
         self._logger = logger
         self._running = False
         self._threads: List[threading.Thread] = []
@@ -125,11 +125,13 @@ class TaskWorker:
                         )
                     continue
                 except Exception as e:
+                    # 动态计算延迟：delay = base_delay * attempts
+                    retry_delay = self._base_retry_delay_seconds * max(1, getattr(task, "attempts", 1))
                     try:
                         self._task_store.mark_retryable(
                             task.id,
                             str(e),
-                            retry_delay_seconds=self._retry_delay_seconds,
+                            retry_delay_seconds=retry_delay,
                         )
                         self._log(
                             "warning",

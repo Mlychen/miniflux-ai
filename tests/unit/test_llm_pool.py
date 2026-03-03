@@ -1,5 +1,3 @@
-from types import SimpleNamespace
-
 from app.application.llm_pool import LLMRequestPool
 
 
@@ -28,8 +26,12 @@ class DummyLogger:
     def error(self, msg):
         self.messages.append(("error", msg))
 
+    def debug(self, msg):
+        self.messages.append(("debug", msg))
 
-def test_call_without_entry_key_delegates_to_gateway():
+
+def test_call_delegates_to_gateway():
+    """测试 LLMRequestPool 正确委托给 gateway。"""
     gateway = DummyGateway(["ok"])
     pool = LLMRequestPool(gateway, max_concurrent=1)
 
@@ -40,117 +42,68 @@ def test_call_without_entry_key_delegates_to_gateway():
     assert len(gateway.calls) == 1
 
 
-def test_entry_max_attempts_exceeded():
-    gateway = DummyGateway(["ok", "ok", "ok"])
+def test_call_returns_error_on_failure():
+    """测试 LLMRequestPool 在失败时返回错误。"""
+    gateway = DummyGateway([RuntimeError("fail")])
     pool = LLMRequestPool(gateway, max_concurrent=1)
-    logger = DummyLogger()
 
-    for _ in range(3):
-        result, err = pool.call(
-            "p",
-            "r",
-            entry_key="k",
-            expected_retries=2,
-            ttl_seconds=100,
-            logger=logger,
-        )
-        assert result == "ok"
-        assert err is None
-
-    result, err = pool.call(
-        "p",
-        "r",
-        entry_key="k",
-        expected_retries=2,
-        ttl_seconds=100,
-        logger=logger,
-    )
+    result, err = pool.call("p", "r")
 
     assert result is None
-    assert err == "max_attempts_exceeded"
-    assert len(gateway.calls) == 3
+    assert isinstance(err, RuntimeError)
+    assert str(err) == "fail"
+    assert len(gateway.calls) == 1
 
 
-def test_entry_ttl_expired():
-    fake_time = SimpleNamespace(value=1000.0)
-
-    def fake_time_fn():
-        return fake_time.value
-
-    import app.application.llm_pool as llm_pool_mod
-
-    original_time = llm_pool_mod.time.time
-    llm_pool_mod.time.time = fake_time_fn
-    try:
-        gateway = DummyGateway(["ok"])
-        pool = LLMRequestPool(gateway, max_concurrent=1)
-        logger = DummyLogger()
-
-        result, err = pool.call(
-            "p",
-            "r",
-            entry_key="k",
-            expected_retries=1,
-            ttl_seconds=5,
-            logger=logger,
-        )
-        assert result == "ok"
-        assert err is None
-
-        fake_time.value += 10
-        result, err = pool.call(
-            "p",
-            "r",
-            entry_key="k",
-            expected_retries=1,
-            ttl_seconds=5,
-            logger=logger,
-        )
-        assert result is None
-        assert err == "expired"
-    finally:
-        llm_pool_mod.time.time = original_time
-
-
-def test_capacity_drops_old_entries():
-    gateway = DummyGateway(["ok", "ok", "ok"])
-    pool = LLMRequestPool(gateway, max_concurrent=1, capacity=2)
-    logger = DummyLogger()
-
-    for key in ["k1", "k2", "k3"]:
-        result, err = pool.call(
-            "p",
-            "r",
-            entry_key=key,
-            expected_retries=1,
-            ttl_seconds=100,
-            logger=logger,
-        )
-        assert result == "ok"
-        assert err is None
-
-    state_k1 = pool.get_state("k1")
-    state_k2 = pool.get_state("k2")
-    state_k3 = pool.get_state("k3")
-
-    assert state_k1 is not None
-    assert state_k1["status"] == "dropped"
-    assert state_k2["status"] == "normal"
-    assert state_k3["status"] == "normal"
-
-
-def test_call_retries_within_single_request():
-    gateway = DummyGateway([RuntimeError("fail-1"), RuntimeError("fail-2"), "ok"])
+def test_get_result_raises_on_error():
+    """测试 get_result 在错误时抛出异常。"""
+    gateway = DummyGateway([RuntimeError("fail")])
     pool = LLMRequestPool(gateway, max_concurrent=1)
 
-    result, err = pool.call(
-        "p",
-        "r",
-        entry_key="retry-key",
-        expected_retries=2,
-        ttl_seconds=100,
-    )
+    try:
+        pool.get_result("p", "r")
+        assert False, "should have raised"
+    except RuntimeError as e:
+        assert str(e) == "fail"
 
-    assert result == "ok"
-    assert err is None
-    assert len(gateway.calls) == 3
+
+def test_get_metrics_counts_calls():
+    """测试 get_metrics 正确计数。"""
+    gateway = DummyGateway(["ok", RuntimeError("fail"), "ok"])
+    pool = LLMRequestPool(gateway, max_concurrent=1)
+
+    pool.call("p1", "r1")
+    pool.call("p2", "r2")
+    pool.call("p3", "r3")
+
+    metrics = pool.get_metrics()
+    assert metrics["total_calls"] == 3
+    assert metrics["total_errors"] == 1
+
+
+def test_no_retry_on_failure():
+    """测试 LLMRequestPool 不再重试，由 TaskStore 负责重试。"""
+    gateway = DummyGateway([RuntimeError("fail"), "ok"])
+    pool = LLMRequestPool(gateway, max_concurrent=1)
+
+    result, err = pool.call("p", "r")
+
+    # 不重试，直接返回错误
+    assert result is None
+    assert isinstance(err, RuntimeError)
+    assert len(gateway.calls) == 1  # 只调用一次
+
+
+def test_concurrent_limit():
+    """测试并发限制。"""
+    gateway = DummyGateway(["ok", "ok"])
+    pool = LLMRequestPool(gateway, max_concurrent=1)
+
+    # 在同一个线程中顺序调用
+    result1, err1 = pool.call("p1", "r1")
+    result2, err2 = pool.call("p2", "r2")
+
+    assert result1 == "ok"
+    assert result2 == "ok"
+    assert err1 is None
+    assert err2 is None

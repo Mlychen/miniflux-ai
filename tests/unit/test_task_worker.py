@@ -80,7 +80,7 @@ class TestTaskWorker(AssertMixin):
             workers=1,
             claim_batch_size=1,
             poll_interval=0.05,
-            retry_delay_seconds=1,
+            base_retry_delay_seconds=1,
             logger=logger,
         )
         worker.start(lambda _: (_ for _ in ()).throw(RuntimeError("temporary")))

@@ -19,7 +19,7 @@ def test_task_worker_marks_done(tmp_path):
     store = TaskStoreSQLite(path=str(tmp_path / "tasks_done.db"))
     store.create_task("canon-1", {"entry_id": 1}, "trace-1", max_attempts=3)
     task = store.list_tasks()[0]
-    worker = TaskWorker(store, workers=1, poll_interval=0.05, retry_delay_seconds=1)
+    worker = TaskWorker(store, workers=1, poll_interval=0.05, base_retry_delay_seconds=1)
     worker.start(lambda t: None)
     try:
         done_task = wait_for_status(store, task.id, TASK_DONE)
@@ -37,7 +37,7 @@ def test_task_worker_marks_retryable(tmp_path):
     def failing(_task):
         raise RuntimeError("boom")
 
-    worker = TaskWorker(store, workers=1, poll_interval=0.05, retry_delay_seconds=1)
+    worker = TaskWorker(store, workers=1, poll_interval=0.05, base_retry_delay_seconds=1)
     worker.start(failing)
     try:
         retry_task = wait_for_status(store, task.id, TASK_RETRYABLE)

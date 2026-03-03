@@ -12,7 +12,7 @@ import { initManualProcess } from './modules/manual-process.js';
 import { initProcessTrace } from './modules/traces.js';
 import { initTaskManager } from './modules/tasks.js';
 import { initProcessedEntries, initProcessHistory } from './modules/entries.js';
-import { initLLMMetrics, initFailedEntries } from './modules/metrics.js';
+import { initLLMMetrics, initFailedEntries, initLLMCalls, initLLMDuplicates } from './modules/metrics.js';
 
 // 初始化应用
 function initApp() {
@@ -104,6 +104,36 @@ function initApp() {
   const metricsModule = initLLMMetrics({
     loadBtn: document.getElementById('btnMetrics'),
     outputEl: document.getElementById('outMetrics')
+  });
+
+  // ========== LLM 调用记录模块 ==========
+  const llmCallsModule = initLLMCalls({
+    loadBtn: document.getElementById('btnLLMCalls'),
+    tableBody: document.getElementById('llmCallsBody'),
+    outputEl: document.getElementById('outLLMCalls'),
+    canonicalIdInput: document.getElementById('llmCanonicalId'),
+    agentFilter: document.getElementById('llmAgentFilter'),
+    statusFilter: document.getElementById('llmStatusFilter'),
+    limitInput: document.getElementById('llmCallsLimit'),
+    statsEl: document.getElementById('llmCallsStats'),
+    duplicatesResultEl: document.getElementById('llmDuplicatesResult'),
+    onTraceRequest: function (canonicalId) {
+      document.getElementById('traceEntryId').value = canonicalId;
+      traceModule.loadTrace();
+      scrollToTraceCard();
+    }
+  });
+
+  // ========== LLM 重复调用检测模块 ==========
+  initLLMDuplicates({
+    loadBtn: document.getElementById('btnLLMDuplicates'),
+    tableBody: document.getElementById('llmDuplicatesBody'),
+    resultContainer: document.getElementById('llmDuplicatesResult'),
+    outputEl: document.getElementById('outLLMCalls'),
+    onCanonicalClick: function (canonicalId) {
+      document.getElementById('llmCanonicalId').value = canonicalId;
+      llmCallsModule.loadCalls();
+    }
   });
 
   // ========== 失败条目模块 ==========

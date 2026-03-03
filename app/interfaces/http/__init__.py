@@ -1,13 +1,11 @@
 import threading
 import os
 import uuid
-from typing import cast
 
 import miniflux
 from flask import Flask, current_app, jsonify, request, redirect, send_from_directory
 
 from app.infrastructure.miniflux_gateway import MinifluxGatewayError
-from app.infrastructure.protocols import LLMRequestPoolProtocol
 from app.infrastructure.ai_news_repository_sqlite import AiNewsRepositorySQLite
 from app.infrastructure.entries_repository_sqlite import EntriesRepositorySQLite
 from app.application.ingest_service import process_entries_batch
@@ -392,39 +390,52 @@ def create_app(
 
     @app.route("/miniflux-ai/user/llm-pool/clear", methods=["POST"])
     def clear_llm_pool():
+        """重试失败任务，通过 TaskStore 重新入队。"""
         services = get_app_services(current_app)
         logger = services.logger
-        llm_client = services.llm_client
+        task_store = services.task_store
 
-        if not hasattr(llm_client, "clear_all") and not hasattr(
-            llm_client, "reset_entry"
-        ):
+        if task_store is None:
             return (
                 jsonify(
                     {
                         "status": "error",
-                        "message": "llm pool does not support clearing",
+                        "message": "task store unavailable",
                     }
                 ),
                 400,
             )
 
         data = request.json or {}
-        entry_key = data.get("entry_key")
-        pool = cast(LLMRequestPoolProtocol, llm_client)
+        task_id = data.get("task_id")
 
-        if entry_key:
-            if hasattr(llm_client, "reset_entry"):
-                pool.reset_entry(entry_key)
+        if task_id:
+            # 重试单个任务
+            try:
+                success = task_store.requeue_task(int(task_id))
+                if success:
+                    if logger:
+                        logger.info(f"task-store: requeue_task task_id={task_id}")
+                    return jsonify({"status": "ok", "mode": "requeue", "task_id": task_id})
+                else:
+                    return jsonify(
+                        {"status": "error", "message": f"task {task_id} not requeueable"}
+                    ), 400
+            except Exception as e:
+                return jsonify(
+                    {"status": "error", "message": str(e)}
+                ), 500
+
+        # 批量重试 dead 任务
+        try:
+            count = task_store.requeue_tasks(status="dead", limit=100)
             if logger:
-                logger.info(f"llm-pool: reset_entry entry_key={entry_key}")
-            return jsonify({"status": "ok", "mode": "reset", "entry_key": entry_key})
-
-        if hasattr(llm_client, "clear_all"):
-            pool.clear_all()
-        if logger:
-            logger.info("llm-pool: clear_all")
-        return jsonify({"status": "ok", "mode": "clear_all"})
+                logger.info(f"task-store: requeue_tasks count={count}")
+            return jsonify({"status": "ok", "mode": "requeue_batch", "count": count})
+        except Exception as e:
+            return jsonify(
+                {"status": "error", "message": str(e)}
+            ), 500
 
     @app.route("/miniflux-ai/user/llm-pool/metrics", methods=["GET"])
     def llm_pool_metrics():
@@ -434,25 +445,27 @@ def create_app(
             return jsonify(
                 {"status": "error", "message": "llm pool metrics unavailable"}
             ), 400
-        pool = cast(LLMRequestPoolProtocol, llm_client)
-        metrics = pool.get_metrics()
+        metrics = llm_client.get_metrics()
         return jsonify({"status": "ok", "metrics": metrics})
 
     @app.route("/miniflux-ai/user/llm-pool/failed-entries", methods=["GET"])
     def llm_pool_failed_entries():
+        """从 TaskStore 获取失败任务（retryable/dead 状态）。"""
         services = get_app_services(current_app)
-        llm_client = services.llm_client
+        task_store = services.task_store
         entries_repository = services.entries_repository
-        if not hasattr(llm_client, "get_failed_entries"):
+
+        if task_store is None:
             return (
                 jsonify(
                     {
                         "status": "error",
-                        "message": "llm pool failed-entries unavailable",
+                        "message": "task store unavailable",
                     }
                 ),
                 400,
             )
+
         limit_raw = request.args.get("limit")
         try:
             limit = int(limit_raw) if limit_raw is not None else 100
@@ -460,8 +473,9 @@ def create_app(
             limit = 100
         if limit <= 0:
             limit = 1
-        pool = cast(LLMRequestPoolProtocol, llm_client)
-        failed = pool.get_failed_entries(limit=limit)
+
+        # 从 TaskStore 获取失败任务
+        failed_tasks = task_store.list_failed_tasks(limit=limit)
         summaries = []
         try:
             summaries = entries_repository.read_all()
@@ -472,23 +486,26 @@ def create_app(
             cid = item.get("id")
             if cid and cid not in summary_index:
                 summary_index[cid] = item
+
         items = []
-        for entry_key, state in failed.items():
-            canonical_id = None
-            is_ai_news = False
-            if entry_key.startswith("ai-news-"):
-                is_ai_news = True
-            else:
-                if ":" in entry_key:
-                    canonical_id = entry_key.split(":", 1)[0]
+        for task in failed_tasks:
+            canonical_id = task.canonical_id
+            is_ai_news = canonical_id.startswith("ai-news-") if canonical_id else False
             summary = summary_index.get(canonical_id) if canonical_id else None
+
             base = {
-                "entry_key": entry_key,
-                **state,
+                "task_id": task.id,
+                "canonical_id": canonical_id,
+                "status": task.status,
+                "attempts": task.attempts,
+                "max_attempts": task.max_attempts,
+                "last_error": task.last_error,
+                "error_key": task.error_key,
+                "next_retry_at": task.next_retry_at,
+                "created_at": task.created_at,
+                "updated_at": task.updated_at,
+                "is_ai_news": is_ai_news,
             }
-            base["is_ai_news"] = is_ai_news
-            if canonical_id:
-                base["canonical_id"] = canonical_id
             if summary:
                 base["title"] = summary.get("title")
                 base["url"] = summary.get("url")
@@ -1243,6 +1260,289 @@ def create_app(
             "trace_id": trace_id_filter or summary.get("trace_id"),
             "summary": summary,
             "stages": stages
+        })
+
+    @app.route("/miniflux-ai/user/llm-calls", methods=["GET"])
+    def get_llm_calls():
+        """
+        获取 LLM 调用记录列表。
+
+        参数：
+        - limit: 返回数量限制 (默认100, 最大500)
+        - offset: 分页偏移
+        - canonical_id: 按 canonical_id 过滤
+        - trace_id: 按 trace_id 过滤
+        - agent: 按 agent 名称过滤
+        - status: 按状态过滤 (success/error)
+
+        返回格式：
+        {
+          "status": "ok",
+          "total": 150,
+          "calls": [
+            {
+              "timestamp": "...",
+              "trace_id": "...",
+              "entry_id": "...",
+              "canonical_id": "...",
+              "agent": "summary",
+              "stage": "preprocess",
+              "status": "success",
+              "duration_ms": 1500,
+              "prompt_template": "...",
+              "input_text": "...",
+              "raw_response": "..."
+            }
+          ]
+        }
+        """
+        import json
+
+        # 解析参数
+        limit_raw = request.args.get("limit")
+        try:
+            limit = int(limit_raw) if limit_raw is not None else 100
+        except ValueError:
+            limit = 100
+        if limit <= 0 or limit > 500:
+            limit = min(max(limit, 1), 500)
+
+        offset_raw = request.args.get("offset")
+        try:
+            offset = int(offset_raw) if offset_raw is not None else 0
+        except ValueError:
+            offset = 0
+        if offset < 0:
+            offset = 0
+
+        canonical_id_filter = request.args.get("canonical_id", "").strip()
+        trace_id_filter = request.args.get("trace_id", "").strip()
+        agent_filter = request.args.get("agent", "").strip()
+        status_filter = request.args.get("status", "").strip()
+
+        log_path = os.path.join("logs", "manual-process.log")
+        if not os.path.exists(log_path):
+            return jsonify({"status": "ok", "total": 0, "limit": limit, "offset": offset, "count": 0, "calls": []})
+
+        # 收集所有 LLM 调用记录
+        # 使用 (trace_id, entry_id, stage) 作为 key 来合并 start 和 complete 记录
+        llm_calls = {}  # key -> call_data
+        all_calls = []  # 最终列表
+
+        try:
+            with open(log_path, "r", encoding="utf-8") as f:
+                for line in f:
+                    try:
+                        record = json.loads(line)
+                        action = record.get("action", "")
+                        stage = record.get("stage", "")
+
+                        # 只处理 LLM 调用相关的记录
+                        if action not in ("llm_call_start", "llm_call_complete", "llm_call_error"):
+                            continue
+
+                        trace_id = record.get("trace_id", "")
+                        entry_id = str(record.get("entry_id") or "")
+                        data = record.get("data") or {}
+
+                        # 创建唯一 key
+                        call_key = f"{trace_id}:{entry_id}:{stage}"
+
+                        if action == "llm_call_start":
+                            # 开始记录
+                            canonical_id = data.get("canonical_id", "")
+                            agent = data.get("agent", "")
+
+                            llm_calls[call_key] = {
+                                "timestamp": record.get("timestamp"),
+                                "trace_id": trace_id,
+                                "entry_id": entry_id,
+                                "canonical_id": canonical_id,
+                                "agent": agent,
+                                "stage": stage,
+                                "status": "pending",
+                                "duration_ms": None,
+                                "prompt_template": data.get("prompt_template", ""),
+                                "input_text": data.get("input_text", ""),
+                                "raw_response": "",
+                            }
+
+                        elif action == "llm_call_complete":
+                            # 完成记录，更新状态
+                            if call_key in llm_calls:
+                                llm_calls[call_key]["status"] = "success"
+                                llm_calls[call_key]["duration_ms"] = record.get("duration_ms")
+                                llm_calls[call_key]["raw_response"] = data.get("raw_response", "")
+                                # 更新 canonical_id（如果 start 时没有）
+                                if not llm_calls[call_key]["canonical_id"]:
+                                    llm_calls[call_key]["canonical_id"] = data.get("canonical_id", "")
+                            else:
+                                # 只有 complete 没有 start，创建独立记录
+                                llm_calls[call_key] = {
+                                    "timestamp": record.get("timestamp"),
+                                    "trace_id": trace_id,
+                                    "entry_id": entry_id,
+                                    "canonical_id": data.get("canonical_id", ""),
+                                    "agent": data.get("agent", ""),
+                                    "stage": stage,
+                                    "status": "success",
+                                    "duration_ms": record.get("duration_ms"),
+                                    "prompt_template": "",
+                                    "input_text": "",
+                                    "raw_response": data.get("raw_response", ""),
+                                }
+
+                        elif action == "llm_call_error":
+                            # 错误记录
+                            if call_key in llm_calls:
+                                llm_calls[call_key]["status"] = "error"
+                                llm_calls[call_key]["duration_ms"] = record.get("duration_ms")
+                                llm_calls[call_key]["raw_response"] = data.get("error", "")
+                            else:
+                                llm_calls[call_key] = {
+                                    "timestamp": record.get("timestamp"),
+                                    "trace_id": trace_id,
+                                    "entry_id": entry_id,
+                                    "canonical_id": data.get("canonical_id", ""),
+                                    "agent": data.get("agent", ""),
+                                    "stage": stage,
+                                    "status": "error",
+                                    "duration_ms": record.get("duration_ms"),
+                                    "prompt_template": "",
+                                    "input_text": "",
+                                    "raw_response": data.get("error", ""),
+                                }
+
+                    except json.JSONDecodeError:
+                        continue
+        except Exception as e:
+            return jsonify({"status": "error", "message": str(e)}), 500
+
+        # 转换为列表
+        all_calls = list(llm_calls.values())
+
+        # 应用过滤
+        if canonical_id_filter:
+            all_calls = [c for c in all_calls if c["canonical_id"] == canonical_id_filter]
+        if trace_id_filter:
+            all_calls = [c for c in all_calls if c["trace_id"] == trace_id_filter]
+        if agent_filter:
+            all_calls = [c for c in all_calls if c["agent"] == agent_filter]
+        if status_filter:
+            all_calls = [c for c in all_calls if c["status"] == status_filter]
+
+        # 按时间降序排序
+        all_calls.sort(key=lambda x: x.get("timestamp") or "", reverse=True)
+
+        total = len(all_calls)
+        page_calls = all_calls[offset:offset + limit]
+
+        return jsonify({
+            "status": "ok",
+            "total": total,
+            "limit": limit,
+            "offset": offset,
+            "count": len(page_calls),
+            "calls": page_calls
+        })
+
+    @app.route("/miniflux-ai/user/llm-calls/duplicates", methods=["GET"])
+    def get_llm_calls_duplicates():
+        """
+        查找同一 canonical_id 被多次调用 LLM 的情况。
+
+        返回格式：
+        {
+          "status": "ok",
+          "duplicates": [
+            {
+              "canonical_id": "...",
+              "call_count": 3,
+              "first_call": "...",
+              "last_call": "...",
+              "agents": ["summary", "translate"]
+            }
+          ]
+        }
+        """
+        import json
+
+        log_path = os.path.join("logs", "manual-process.log")
+        if not os.path.exists(log_path):
+            return jsonify({"status": "ok", "duplicates": []})
+
+        # 按 canonical_id 聚合统计
+        canonical_stats = {}  # canonical_id -> {count, first_call, last_call, agents}
+
+        try:
+            with open(log_path, "r", encoding="utf-8") as f:
+                for line in f:
+                    try:
+                        record = json.loads(line)
+                        action = record.get("action", "")
+
+                        # 只统计 llm_call_start，避免 start 和 complete 重复计数
+                        if action != "llm_call_start":
+                            continue
+
+                        data = record.get("data") or {}
+                        canonical_id = data.get("canonical_id", "")
+
+                        if not canonical_id:
+                            continue
+
+                        timestamp = record.get("timestamp", "")
+                        agent = data.get("agent", "")
+                        stage = record.get("stage", "")
+
+                        if canonical_id not in canonical_stats:
+                            canonical_stats[canonical_id] = {
+                                "canonical_id": canonical_id,
+                                "call_count": 0,
+                                "first_call": timestamp,
+                                "last_call": timestamp,
+                                "agents": set(),
+                            }
+
+                        stats = canonical_stats[canonical_id]
+                        stats["call_count"] += 1
+
+                        if timestamp:
+                            if stats["first_call"] > timestamp:
+                                stats["first_call"] = timestamp
+                            if stats["last_call"] < timestamp:
+                                stats["last_call"] = timestamp
+
+                        if agent:
+                            stats["agents"].add(agent)
+                        if stage and stage not in ("preprocess", "agent_process"):
+                            pass
+                        elif stage:
+                            stats["agents"].add(stage)
+
+                    except json.JSONDecodeError:
+                        continue
+        except Exception as e:
+            return jsonify({"status": "error", "message": str(e)}), 500
+
+        # 筛选出调用次数 > 1 的
+        duplicates = []
+        for stats in canonical_stats.values():
+            if stats["call_count"] > 1:
+                duplicates.append({
+                    "canonical_id": stats["canonical_id"],
+                    "call_count": stats["call_count"],
+                    "first_call": stats["first_call"],
+                    "last_call": stats["last_call"],
+                    "agents": sorted(list(stats["agents"])),
+                })
+
+        # 按调用次数降序排序
+        duplicates.sort(key=lambda x: x["call_count"], reverse=True)
+
+        return jsonify({
+            "status": "ok",
+            "duplicates": duplicates
         })
 
     return app

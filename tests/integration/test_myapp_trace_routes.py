@@ -237,42 +237,57 @@ def test_llm_pool_metrics_returns_ok(tmp_path):
     assert payload["metrics"]["failed"] == 2
 
 
-def test_llm_pool_failed_entries_returns_400_when_unavailable(tmp_path):
+def test_llm_pool_failed_entries_returns_400_when_task_store_unavailable(tmp_path):
+    """当 TaskStore 不可用时返回 400。"""
     app, _ = build_app(tmp_path, llm_client=SimpleNamespace())
+    # build_app 默认不传入 task_store，所以会是 None
     client = app.test_client()
     response = client.get("/miniflux-ai/user/llm-pool/failed-entries")
     payload = response.get_json()
     assert response.status_code == 400
-    assert payload["message"] == "llm pool failed-entries unavailable"
+    assert payload["message"] == "task store unavailable"
 
 
-def test_llm_pool_failed_entries_handles_invalid_limit_and_missing_summaries(tmp_path):
-    class DummyPool:
-        def __init__(self):
-            self.last_limit = None
+def test_llm_pool_failed_entries_returns_tasks_from_task_store(tmp_path):
+    """从 TaskStore 获取失败任务。"""
+    from app.infrastructure.task_store_sqlite import TaskStoreSQLite
 
-        def get_failed_entries(self, limit=100):
-            self.last_limit = limit
-            return {
-                "canon-1:entry-1": {"status": "failed"},
-                "ai-news-2026-01": {"status": "failed"},
-            }
+    task_store = TaskStoreSQLite(path=str(tmp_path / "tasks.db"), lock=threading.Lock())
+    # 创建两个失败任务
+    task_store.create_task("canon-1", {"entry_id": 1}, now_ts=1000)
+    task_store.create_task("ai-news-2026-01", {"entry_id": 2}, now_ts=1000)
 
-    class FailingEntriesRepository:
-        def read_all(self):
-            raise RuntimeError("read failure")
+    # 标记第一个为 retryable
+    task = task_store.get_task_by_canonical_id("canon-1")
+    task_store.mark_retryable(task.id, "test error", retry_delay_seconds=30)
 
-    pool = DummyPool()
-    app, _ = build_app(
-        tmp_path, llm_client=pool, entries_repo=FailingEntriesRepository()
+    # 标记第二个为 dead
+    task2 = task_store.get_task_by_canonical_id("ai-news-2026-01")
+    task_store.mark_dead(task2.id, "permanent error")
+
+    app, _ = build_app(tmp_path)
+    # 手动注入 task_store
+    app.config["APP_SERVICES"] = app.config["APP_SERVICES"].__class__(
+        config=app.config["APP_SERVICES"].config,
+        miniflux_client=app.config["APP_SERVICES"].miniflux_client,
+        llm_client=app.config["APP_SERVICES"].llm_client,
+        logger=app.config["APP_SERVICES"].logger,
+        entry_processor=app.config["APP_SERVICES"].entry_processor,
+        entries_repository=app.config["APP_SERVICES"].entries_repository,
+        ai_news_repository=app.config["APP_SERVICES"].ai_news_repository,
+        task_store=task_store,
     )
+
     client = app.test_client()
-    response = client.get("/miniflux-ai/user/llm-pool/failed-entries?limit=-2")
+    response = client.get("/miniflux-ai/user/llm-pool/failed-entries")
     payload = response.get_json()
     assert response.status_code == 200
     assert payload["status"] == "ok"
-    assert pool.last_limit == 1
     items = payload["items"]
     assert len(items) == 2
-    item_keys = {item["entry_key"] for item in items}
-    assert item_keys == {"canon-1:entry-1", "ai-news-2026-01"}
+    canonical_ids = {item["canonical_id"] for item in items}
+    assert canonical_ids == {"canon-1", "ai-news-2026-01"}
+    # 检查状态字段
+    statuses = {item["canonical_id"]: item["status"] for item in items}
+    assert statuses["canon-1"] == "retryable"
+    assert statuses["ai-news-2026-01"] == "dead"

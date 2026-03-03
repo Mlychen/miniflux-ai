@@ -413,27 +413,118 @@
       <!-- 系统状态标签 -->
       <div class="tab-content" data-tab="system">
         <div class="grid">
-          <!-- LLM 指标卡片 -->
-          <div class="card">
+          <!-- LLM 调用记录卡片 -->
+          <div class="card full">
             <div class="card-header">
               <div class="card-title">
                 <svg class="card-icon" viewBox="0 0 16 16" fill="currentColor">
                   <path d="M0 4.5a.5.5 0 01.5-.5h1a.5.5 0 01.5.5v1a.5.5 0 01-.5.5h-1a.5.5 0 01-.5-.5v-1zm3 0a.5.5 0 01.5-.5h1a.5.5 0 01.5.5v1a.5.5 0 01-.5.5h-1a.5.5 0 01-.5-.5v-1zm3.5-.5a.5.5 0 00-.5.5v1a.5.5 0 00.5.5h1a.5.5 0 00.5-.5v-1a.5.5 0 00-.5-.5h-1zm3.5.5a.5.5 0 01.5-.5h1a.5.5 0 01.5.5v1a.5.5 0 01-.5.5h-1a.5.5 0 01-.5-.5v-1zM0 9.5a.5.5 0 01.5-.5h1a.5.5 0 01.5.5v1a.5.5 0 01-.5.5h-1a.5.5 0 01-.5-.5v-1zm3 0a.5.5 0 01.5-.5h1a.5.5 0 01.5.5v1a.5.5 0 01-.5.5h-1a.5.5 0 01-.5-.5v-1zm3.5-.5a.5.5 0 00-.5.5v1a.5.5 0 00.5.5h1a.5.5 0 00.5-.5v-1a.5.5 0 00-.5-.5h-1zm3.5.5a.5.5 0 01.5-.5h1a.5.5 0 01.5.5v1a.5.5 0 01-.5.5h-1a.5.5 0 01-.5-.5v-1z"/>
                   <path d="M1.5 7a.5.5 0 01.5-.5h6a.5.5 0 010 1H2a.5.5 0 01-.5-.5zM0 11.5a.5.5 0 01.5-.5h6a.5.5 0 010 1H2a.5.5 0 01-.5-.5z"/>
                 </svg>
-                LLM 指标
+                LLM 调用记录
+              </div>
+              <div class="input-group">
+                <label class="input-label" for="llmCanonicalId">Canonical ID</label>
+                <input class="input" id="llmCanonicalId" type="text" placeholder="过滤 canonical_id" style="min-width: 180px;" />
+                <label class="input-label" for="llmAgentFilter">Agent</label>
+                <select class="input" id="llmAgentFilter" style="width: 120px;">
+                  <option value="">全部</option>
+                  <option value="preprocess">preprocess</option>
+                  <option value="summary">summary</option>
+                  <option value="translate">translate</option>
+                </select>
+                <label class="input-label" for="llmStatusFilter">状态</label>
+                <select class="input" id="llmStatusFilter" style="width: 100px;">
+                  <option value="">全部</option>
+                  <option value="success">成功</option>
+                  <option value="error">失败</option>
+                </select>
+                <label class="input-label" for="llmCallsLimit">Limit</label>
+                <input class="input" id="llmCallsLimit" type="text" inputmode="numeric" value="100" style="width: 80px" />
+                <button class="btn btn-primary" id="btnLLMCalls">加载</button>
+                <button class="btn" id="btnLLMDuplicates">检测重复</button>
+              </div>
+            </div>
+            <div class="card-body" style="padding: 0;">
+              <div style="padding: var(--space-md); border-bottom: 1px solid var(--border-secondary);">
+                <div class="stats-row" id="llmCallsStats">
+                  <div class="stat">
+                    <span class="stat-label">总数</span>
+                    <span class="stat-value">0</span>
+                  </div>
+                  <div class="stat">
+                    <span class="stat-label">成功</span>
+                    <span class="stat-value" style="color: var(--success);">0</span>
+                  </div>
+                  <div class="stat">
+                    <span class="stat-label">失败</span>
+                    <span class="stat-value" style="color: var(--danger);">0</span>
+                  </div>
+                </div>
+              </div>
+              <div class="table-container">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>时间</th>
+                      <th>Canonical ID</th>
+                      <th>Trace ID</th>
+                      <th>Agent</th>
+                      <th>状态</th>
+                      <th>耗时</th>
+                      <th>响应预览</th>
+                      <th>操作</th>
+                    </tr>
+                  </thead>
+                  <tbody id="llmCallsBody">
+                    <tr>
+                      <td colspan="8" class="empty-state">
+                        <div class="empty-state-icon">🤖</div>
+                        <div class="empty-state-text">点击"加载"按钮查看 LLM 调用记录</div>
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+              <!-- 重复调用检测结果（初始隐藏） -->
+              <div id="llmDuplicatesResult" style="display: none; margin-top: var(--space-md);">
+                <div style="font-size: 13px; color: var(--text-secondary); margin-bottom: var(--space-sm);">
+                  检测到重复调用：
+                </div>
+                <div class="table-container" style="max-height: 300px;">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Canonical ID</th>
+                        <th>调用次数</th>
+                        <th>首次调用</th>
+                        <th>最后调用</th>
+                        <th>Agents</th>
+                      </tr>
+                    </thead>
+                    <tbody id="llmDuplicatesBody"></tbody>
+                  </table>
+                </div>
+              </div>
+              <pre class="code-block mono" id="outLLMCalls" style="border-top: none; border-radius: 0 0 var(--radius-md) var(--radius-md);"></pre>
+            </div>
+          </div>
+
+          <!-- LLM 指标卡片 (保留简单指标) -->
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title">
+                <svg class="card-icon" viewBox="0 0 16 16" fill="currentColor">
+                  <path d="M11.536 3.464a5 5 0 010 7.072.5.5 0 11-.708-.707 4 4 0 000-5.656.5.5 0 11.708-.708z"/>
+                  <path d="M15 8a6 6 0 11-12 0 6 6 0 0112 0z"/>
+                  <path d="M8 3a.5.5 0 01.5.5v4a.5.5 0 01-1 0v-4A.5.5 0 018 3z"/>
+                </svg>
+                LLM 池指标
               </div>
             </div>
             <div class="card-body">
               <div class="input-group">
-                <button class="btn" id="btnMetrics">
-                  <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
-                    <path d="M11.536 3.464a5 5 0 010 7.072.5.5 0 11-.708-.707 4 4 0 000-5.656.5.5 0 11.708-.708z"/>
-                    <path d="M15 8a6 6 0 11-12 0 6 6 0 0112 0z"/>
-                    <path d="M8 3a.5.5 0 01.5.5v4a.5.5 0 01-1 0v-4A.5.5 0 018 3z"/>
-                  </svg>
-                  刷新指标
-                </button>
+                <button class="btn" id="btnMetrics">刷新指标</button>
               </div>
               <pre class="code-block mono" id="outMetrics"></pre>
             </div>

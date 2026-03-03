@@ -17,7 +17,7 @@ export default defineConfig({
     port: 3000,
     proxy: {
       '/miniflux-ai': {
-        target: 'http://localhost:5000',
+        target: 'http://localhost:8081',
         changeOrigin: true
       }
     }
