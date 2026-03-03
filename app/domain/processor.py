@@ -123,39 +123,9 @@ def _call_llm_with_entry_options(
     prompt,
     request,
     logger,
-    entry_key=None,
-    expected_retries=None,
-    ttl_seconds=None,
 ):
+    """调用 LLM 客户端。"""
     get_result = getattr(llm_client, "get_result")
-    try:
-        sig = inspect.signature(get_result)
-    except (TypeError, ValueError):
-        sig = None
-
-    supports_kwargs = bool(
-        sig
-        and any(
-            param.kind == inspect.Parameter.VAR_KEYWORD
-            for param in sig.parameters.values()
-        )
-    )
-    supports_named = bool(
-        sig
-        and "entry_key" in sig.parameters
-        and "expected_retries" in sig.parameters
-        and "ttl_seconds" in sig.parameters
-    )
-
-    if supports_kwargs or supports_named:
-        return get_result(
-            prompt,
-            request,
-            logger,
-            entry_key=entry_key,
-            expected_retries=expected_retries,
-            ttl_seconds=ttl_seconds,
-        )
     return get_result(prompt, request, logger)
 
 
@@ -181,9 +151,6 @@ def preprocess_entry(
     trace_id=None,
     entry_id=None,
     canonical_id=None,
-    entry_key=None,
-    expected_retries=None,
-    ttl_seconds=None,
 ):
     if not _should_preprocess_entry(config, entry):
         return None
@@ -203,9 +170,6 @@ def preprocess_entry(
             prompt,
             request_content,
             logger,
-            entry_key=entry_key,
-            expected_retries=expected_retries,
-            ttl_seconds=ttl_seconds,
         )
     except Exception as e:
         if logger:
@@ -235,10 +199,6 @@ def process_entry(
     dedup_marker = config.miniflux_dedup_marker
     entry_id = str(entry["id"])
     canonical_id = make_canonical_id(entry.get("url"), entry.get("title"))
-    request_expected_retries = max(
-        0, int(getattr(config, "llm_request_expected_retries", 2))
-    )
-    request_ttl_seconds = float(getattr(config, "llm_request_ttl_seconds", 600))
     trace_id = entry.get("_trace_id") or uuid.uuid4().hex
     start_time = time.time()
     marked_processed = False
@@ -389,9 +349,6 @@ def process_entry(
         trace_id=trace_id,
         entry_id=entry_id,
         canonical_id=canonical_id,
-        entry_key=f"{canonical_id}:preprocess",
-        expected_retries=request_expected_retries,
-        ttl_seconds=request_ttl_seconds,
     )
     preprocess_duration = int((time.time() - preprocess_start) * 1000)
 
@@ -455,9 +412,6 @@ def process_entry(
                             agent_prompt,
                             agent_input,
                             logger,
-                            entry_key=f"{canonical_id}:{agent_name}",
-                            expected_retries=request_expected_retries,
-                            ttl_seconds=request_ttl_seconds,
                         )
                     except Exception as e:
                         logger.error(
@@ -490,9 +444,6 @@ def process_entry(
                         agent_prompt,
                         agent_input,
                         logger,
-                        entry_key=f"{canonical_id}:{agent_name}",
-                        expected_retries=request_expected_retries,
-                        ttl_seconds=request_ttl_seconds,
                     )
                 except Exception as e:
                     logger.error(

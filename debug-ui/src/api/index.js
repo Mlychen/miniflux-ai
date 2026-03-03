@@ -187,6 +187,10 @@ export const API = {
   llmFailedEntries: `${API_BASE}/user/llm-pool/failed-entries`,
   llmClear: `${API_BASE}/user/llm-pool/clear`,
 
+  // LLM 调用记录
+  llmCalls: `${API_BASE}/user/llm-calls`,
+  llmCallsDuplicates: `${API_BASE}/user/llm-calls/duplicates`,
+
   // 已处理条目
   processedEntries: `${API_BASE}/user/processed-entries`,
 
@@ -327,12 +331,12 @@ export async function getFailedEntries(limit = 100) {
 }
 
 /**
- * 清空 LLM 池
- * @param {string} entryKey - 可选的条目 key
+ * 清空 LLM 池 / 重试任务
+ * @param {number} taskId - 可选的任务 ID，用于重试单个任务
  * @returns {Promise<any>} 操作结果
  */
-export async function clearLLMPool(entryKey = null) {
-  const payload = entryKey ? { entry_key: entryKey } : {};
+export async function clearLLMPool(taskId = null) {
+  const payload = taskId ? { task_id: taskId } : {};
   return request('POST', API.llmClear, payload);
 }
 
@@ -354,4 +358,30 @@ export async function getProcessedEntries(limit = 100, offset = 0) {
  */
 export async function searchProcessHistory(query, limit = 50) {
   return request('GET', `${API.processSearch}?q=${encodeURIComponent(query)}&limit=${encodeURIComponent(limit)}`);
+}
+
+/**
+ * 获取 LLM 调用记录
+ * @param {Object} params - 查询参数
+ * @returns {Promise<any>} LLM 调用记录
+ */
+export async function getLLMCalls(params = {}) {
+  const searchParams = new URLSearchParams();
+  if (params.limit) searchParams.set('limit', String(params.limit));
+  if (params.offset) searchParams.set('offset', String(params.offset));
+  if (params.canonical_id) searchParams.set('canonical_id', params.canonical_id);
+  if (params.trace_id) searchParams.set('trace_id', params.trace_id);
+  if (params.agent) searchParams.set('agent', params.agent);
+  if (params.status) searchParams.set('status', params.status);
+
+  const queryString = searchParams.toString();
+  return request('GET', queryString ? `${API.llmCalls}?${queryString}` : API.llmCalls);
+}
+
+/**
+ * 获取 LLM 重复调用记录
+ * @returns {Promise<any>} 重复调用记录
+ */
+export async function getLLMCallDuplicates() {
+  return request('GET', API.llmCallsDuplicates);
 }
