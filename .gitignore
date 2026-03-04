@@ -172,3 +172,4 @@ cython_debug/
 /.gitattributes
 *.bak
 run_profiling.ps1
+AGENTS.md

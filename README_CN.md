@@ -131,6 +131,10 @@ miniflux:
   task_poll_interval: 1.0
   task_retry_delay_seconds: 30
   task_max_attempts: 5
+  # 可选：启用 save_entry 专用管线（仅入库，不改写条目）
+  save_entry_enabled: false
+  # 可选：save_entry 任务最大重试次数（未设置时沿用 task_max_attempts）
+  save_entry_max_attempts: 5
 
 llm:
   base_url: https://api.your-llm-provider.com
@@ -151,6 +155,10 @@ ai_news:
 Webhook 模式行为：
 - `/miniflux-ai/webhook/entries` 总是先持久化到任务存储。
 - 如果任务存储未配置/不可用，Webhook 返回 `500`，且不会回退到内存队列/同步处理。
+- `event_type=save_entry` 行为：
+  - 默认（`save_entry_enabled: false`）：返回 `200`，状态为 `ignored`。
+  - 启用（`save_entry_enabled: true`）：入队专用 `save_entry` 任务并返回 `202`。
+  - 处理逻辑仅写入 `saved_entries` 表，不会回写 Miniflux 条目内容。
 
 任务可观测性 API：
 - `GET /miniflux-ai/user/tasks?status=&limit=&offset=&include_payload=`
@@ -174,6 +182,18 @@ Webhook 模式行为：
   - 重新入队单个任务（支持源状态：`dead|retryable|running`）到 `pending`。
 - `POST /miniflux-ai/user/tasks/requeue`
   - 按过滤器批量重新入队（`status` 默认 `dead`; 可选 `error`/`error_key` 归一化分组过滤器; `limit` 默认 `100`）。
+
+已保存条目查询 API：
+- `GET /miniflux-ai/user/saved-entries?title=&match=&limit=&offset=`
+  - 按标题查询 `save_entry` 管线持久化结果。
+  - 必填：`title`
+  - 可选：
+    - `match`: `prefix`（默认）| `contains` | `exact`
+    - `limit`: 默认 `50`，最大 `500`
+    - `offset`: 默认 `0`
+  - 返回：
+    - 分页字段（`count`, `total`, `limit`, `offset`）
+    - `entries[]`（包含 `canonical_id`, `entry_id`, `title`, `url`, `feed_title`, `save_count`, `first_saved_at`, `last_saved_at`）
 
 Debug UI:
 - 启用 `debug_enabled: true`，然后打开 `/debug/`。

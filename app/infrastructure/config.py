@@ -30,6 +30,12 @@ class Config:
         self.miniflux_task_max_attempts = self.get_config_value(
             'miniflux', 'task_max_attempts', 5
         )
+        self.miniflux_save_entry_enabled = self.get_config_value(
+            'miniflux', 'save_entry_enabled', False
+        )
+        self.miniflux_save_entry_max_attempts = self.get_config_value(
+            'miniflux', 'save_entry_max_attempts', self.miniflux_task_max_attempts
+        )
         self.miniflux_dedup_marker = self.get_config_value('miniflux', 'dedup_marker', '<!-- miniflux-ai:processed -->')
 
         self.llm_provider = self.get_config_value('llm', 'provider', 'openai')

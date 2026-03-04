@@ -18,6 +18,10 @@ miniflux:
   # task_poll_interval: 1.0
   # task_retry_delay_seconds: 30
   # task_max_attempts: 5
+  # 是否启用 save_entry 专用管线（仅入库，不回写内容）
+  # save_entry_enabled: false
+  # save_entry 任务重试上限（不填时默认使用 task_max_attempts）
+  # save_entry_max_attempts: 5
   # 轮询间隔（分钟）
   # 未设置 schedule_interval 时：
   # - 无 webhook_secret 默认 1 分钟

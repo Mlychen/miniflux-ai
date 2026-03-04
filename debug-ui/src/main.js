@@ -82,7 +82,10 @@ function initApp() {
 
   // 辅助函数：跳转到追踪卡片
   function scrollToTraceCard() {
-    document.querySelectorAll('.card')[1].scrollIntoView({ behavior: 'smooth' });
+    const traceCard = document.getElementById('tracePanelCard');
+    if (traceCard) {
+      traceCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
   }
 
   // ========== 手动处理模块 ==========
@@ -221,6 +224,38 @@ function initApp() {
 
   // 页面加载时自动加载处理历史
   historyModule.loadHistory();
+
+  // ========== 全局快捷操作 ==========
+  const btnGlobalRefresh = document.getElementById('btnGlobalRefresh');
+  const btnGlobalClearOutput = document.getElementById('btnGlobalClearOutput');
+
+  if (btnGlobalRefresh) {
+    btnGlobalRefresh.addEventListener('click', function () {
+      document.getElementById('btnMetrics')?.click();
+      document.getElementById('btnTaskGroupsLoad')?.click();
+      document.getElementById('btnHistory')?.click();
+    });
+  }
+
+  if (btnGlobalClearOutput) {
+    btnGlobalClearOutput.addEventListener('click', function () {
+      [
+        'outManual',
+        'outTrace',
+        'outMetrics',
+        'outFailed',
+        'outProcessed',
+        'outTaskOps',
+        'outHistory',
+        'outLLMCalls'
+      ].forEach(function (id) {
+        const el = document.getElementById(id);
+        if (el) {
+          el.textContent = '';
+        }
+      });
+    });
+  }
 }
 
 // DOM 加载完成后初始化

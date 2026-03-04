@@ -218,6 +218,10 @@ miniflux:
   task_poll_interval: 1.0
   task_retry_delay_seconds: 30
   task_max_attempts: 5
+  # optional: dedicated save_entry pipeline (store-only)
+  save_entry_enabled: false
+  # optional: retry cap for save_entry tasks (defaults to task_max_attempts)
+  save_entry_max_attempts: 5
 
 llm:
   base_url: https://api.your-llm-provider.com
@@ -239,6 +243,10 @@ Webhook mode behavior:
 
 - `/miniflux-ai/webhook/entries` always persists to task store first.
 - If task store is not configured/available, webhook returns `500` and does not fall back to in-memory queue/synchronous processing.
+- `event_type=save_entry` behavior:
+  - default (`save_entry_enabled: false`): returns `200` with `{"status":"ignored" ...}`.
+  - enabled (`save_entry_enabled: true`): enqueues a dedicated `save_entry` task and returns `202`.
+  - processing is store-only: it writes to `saved_entries` table and does not update Miniflux entry content.
 
 Task observability APIs:
 
@@ -263,6 +271,19 @@ Task observability APIs:
   - Requeue one task (supported source states: `dead|retryable|running`) to `pending`.
 - `POST /miniflux-ai/user/tasks/requeue`
   - Batch requeue by filter (`status` default `dead`; optional `error`/`error_key` normalized group filter; `limit` default `100`).
+
+Saved entries API:
+
+- `GET /miniflux-ai/user/saved-entries?title=&match=&limit=&offset=`
+  - Query persisted saved-entry records by title.
+  - Required: `title`.
+  - Optional:
+    - `match`: `prefix` (default) | `contains` | `exact`
+    - `limit`: default `50`, max `500`
+    - `offset`: default `0`
+  - Returns:
+    - pagination fields (`count`, `total`, `limit`, `offset`)
+    - `entries[]` with `canonical_id`, `entry_id`, `title`, `url`, `feed_title`, `save_count`, `first_saved_at`, `last_saved_at`.
 
 Debug UI:
 

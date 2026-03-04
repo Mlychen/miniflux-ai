@@ -44,9 +44,72 @@ def register_webhook_routes(app):
             trace_id = uuid.uuid4().hex
 
         if event_type == "save_entry":
-            if logger:
-                logger.info("Received save_entry webhook event, ignoring for now")
-            return jsonify({"status": "ignored", "reason": "save_entry not processed"}), 200
+            if not bool(getattr(config, "miniflux_save_entry_enabled", False)):
+                if logger:
+                    logger.info("Received save_entry webhook event, ignoring for now")
+                return jsonify({"status": "ignored", "reason": "save_entry not processed"}), 200
+
+            task_store = current_app.config.get("TASK_STORE")
+            if task_store is None:
+                if logger:
+                    logger.error("Webhook task store is not configured")
+                return jsonify({"status": "error", "message": "task store not configured"}), 500
+
+            entry = data.get("entry")
+            entries = data.get("entries")
+            if not isinstance(entry, dict) and isinstance(entries, list) and len(entries) > 0:
+                first = entries[0]
+                if isinstance(first, dict):
+                    entry = first
+
+            feed = data.get("feed")
+            if feed is None:
+                feed = {}
+
+            if not isinstance(entry, dict):
+                return jsonify({"status": "error", "message": "invalid payload"}), 400
+            if not isinstance(feed, dict):
+                return jsonify({"status": "error", "message": "invalid payload"}), 400
+            if not str(entry.get("title") or "").strip():
+                return jsonify({"status": "error", "message": "invalid payload"}), 400
+
+            canonical_id = make_canonical_id(entry.get("url"), entry.get("title"))
+
+            max_attempts = int(
+                getattr(
+                    config,
+                    "miniflux_save_entry_max_attempts",
+                    getattr(config, "miniflux_task_max_attempts", 5),
+                )
+            )
+            try:
+                created = task_store.create_task(
+                    canonical_id=canonical_id,
+                    payload={"task_type": "save_entry", "entry": entry, "feed": feed},
+                    trace_id=trace_id,
+                    max_attempts=max_attempts,
+                )
+            except Exception as e:
+                if logger:
+                    logger.error(f"Webhook task persistence failed: {e}")
+                return (
+                    jsonify({"status": "error", "message": "task persistence failed"}),
+                    500,
+                )
+
+            accepted = 1 if created else 0
+            duplicates = 0 if created else 1
+            return (
+                jsonify(
+                    {
+                        "status": "accepted",
+                        "accepted": accepted,
+                        "duplicates": duplicates,
+                        "trace_id": trace_id,
+                    }
+                ),
+                202,
+            )
 
         entries = data.get("entries")
         feed = data.get("feed")

@@ -12,6 +12,7 @@ from app.infrastructure.protocols import LLMClientProtocol, MinifluxGatewayProto
 from app.infrastructure.ai_news_repository_sqlite import AiNewsRepositorySQLite
 from app.infrastructure.config import Config
 from app.infrastructure.entries_repository_sqlite import EntriesRepositorySQLite
+from app.infrastructure.saved_entries_repository_sqlite import SavedEntriesRepositorySQLite
 from app.observability.trace import get_logger
 from app.infrastructure.task_store_sqlite import TaskStoreSQLite
 from app.domain.ai_news_helpers import has_ai_news_feed
@@ -73,6 +74,7 @@ class RuntimeServices:
     entry_processor: object
     entries_repository: object
     ai_news_repository: object
+    saved_entries_repository: object
     task_store: object = None
 
 
@@ -160,17 +162,34 @@ def create_task_record_processor(services):
         miniflux_client = services.miniflux_client
         llm_client = services.llm_client
         entry_processor = services.entry_processor
+        saved_entries_repository = services.saved_entries_repository
 
         payload = task.payload if hasattr(task, "payload") else {}
         if not isinstance(payload, dict):
             raise PermanentTaskError("invalid payload: payload must be an object")
 
+        task_type = str(payload.get("task_type") or "entry_process").strip().lower()
         entry = payload.get("entry")
         feed = payload.get("feed")
         if not isinstance(entry, dict):
             raise PermanentTaskError("invalid payload: missing entry")
+        if feed is None:
+            feed = {}
         if not isinstance(feed, dict):
             raise PermanentTaskError("invalid payload: missing feed")
+
+        if task_type == "save_entry":
+            canonical_id = str(getattr(task, "canonical_id", "") or "").strip()
+            if not canonical_id:
+                raise PermanentTaskError("invalid payload: missing canonical_id")
+            if saved_entries_repository is None:
+                raise RuntimeError("saved entries repository is not configured")
+            saved_entries_repository.upsert_saved_entry(
+                canonical_id=canonical_id,
+                entry=entry,
+                feed=feed,
+            )
+            return
 
         trace_id = str(getattr(task, "trace_id", "") or "")
         entry_data = dict(entry)
@@ -229,6 +248,7 @@ def my_flask(services, entry_mode):
         entry_processor=services.entry_processor,
         entries_repository=services.entries_repository,
         ai_news_repository=services.ai_news_repository,
+        saved_entries_repository=services.saved_entries_repository,
         task_store=task_store,
     )
     logger.info("Starting API")
@@ -255,6 +275,7 @@ def bootstrap(config_path="config.yml"):
     task_store = TaskStoreSQLite(path=sqlite_path, lock=shared_lock)
     entries_repository = EntriesRepositorySQLite(path=sqlite_path, lock=shared_lock)
     ai_news_repository = AiNewsRepositorySQLite(path=sqlite_path, lock=shared_lock)
+    saved_entries_repository = SavedEntriesRepositorySQLite(path=sqlite_path, lock=shared_lock)
     processed_news_ids = InMemoryProcessedNewsIds()
     entry_processor = build_rate_limited_processor(
         config,
@@ -271,6 +292,7 @@ def bootstrap(config_path="config.yml"):
         entry_processor=entry_processor,
         entries_repository=entries_repository,
         ai_news_repository=ai_news_repository,
+        saved_entries_repository=saved_entries_repository,
         task_store=task_store,
     )
 

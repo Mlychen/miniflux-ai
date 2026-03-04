@@ -8,6 +8,7 @@ from flask import Flask, current_app, jsonify, request, redirect, send_from_dire
 from app.infrastructure.miniflux_gateway import MinifluxGatewayError
 from app.infrastructure.ai_news_repository_sqlite import AiNewsRepositorySQLite
 from app.infrastructure.entries_repository_sqlite import EntriesRepositorySQLite
+from app.infrastructure.saved_entries_repository_sqlite import SavedEntriesRepositorySQLite
 from app.application.ingest_service import process_entries_batch
 from app.interfaces.http.services import AppServices, get_app_services
 
@@ -20,6 +21,7 @@ def create_app(
     entry_processor,
     entries_repository=None,
     ai_news_repository=None,
+    saved_entries_repository=None,
     task_store=None,
 ):
     sqlite_path = getattr(config, "storage_sqlite_path", "runtime/miniflux_ai.db")
@@ -39,6 +41,15 @@ def create_app(
         )
     else:
         app_ai_news_repository = ai_news_repository
+
+    if saved_entries_repository is None:
+        saved_entries_lock = threading.Lock()
+        app_saved_entries_repository = SavedEntriesRepositorySQLite(
+            path=sqlite_path, lock=saved_entries_lock
+        )
+    else:
+        app_saved_entries_repository = saved_entries_repository
+
     app = Flask(__name__)
     app.config["APP_SERVICES"] = AppServices(
         config=config,
@@ -48,6 +59,7 @@ def create_app(
         entry_processor=entry_processor,
         entries_repository=app_entries_repository,
         ai_news_repository=app_ai_news_repository,
+        saved_entries_repository=app_saved_entries_repository,
         task_store=task_store,
     )
 
@@ -55,12 +67,14 @@ def create_app(
         app.config["TASK_STORE"] = task_store
 
     from app.interfaces.http.ai_news_publish import register_ai_news_publish_routes
+    from app.interfaces.http.saved_entries_query import register_saved_entries_query_routes
     from app.interfaces.http.task_query import register_task_query_routes
     from app.interfaces.http.webhook_ingest import register_webhook_routes
 
     register_ai_news_publish_routes(app)
     register_webhook_routes(app)
     register_task_query_routes(app)
+    register_saved_entries_query_routes(app)
 
     if getattr(config, "debug_enabled", False):
         debug_dir = os.path.abspath(

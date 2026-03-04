@@ -173,6 +173,7 @@ llm:
                 assert services.entry_processor is not None
                 assert services.entries_repository is not None
                 assert services.ai_news_repository is not None
+                assert services.saved_entries_repository is not None
 
                 # 验证 task_store 存在 (webhook 模式需要)
                 assert services.task_store is not None, "task_store 不能为 None，webhook 模式需要它"

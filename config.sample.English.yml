@@ -18,6 +18,10 @@ miniflux:
   # task_poll_interval: 1.0
   # task_retry_delay_seconds: 30
   # task_max_attempts: 5
+  # Enable dedicated save_entry pipeline (store-only, no content rewrite)
+  # save_entry_enabled: false
+  # Retry cap for save_entry tasks (defaults to task_max_attempts when omitted)
+  # save_entry_max_attempts: 5
   # Polling interval in minutes.
   # If schedule_interval is not set:
   # - defaults to 1 minute without webhook_secret

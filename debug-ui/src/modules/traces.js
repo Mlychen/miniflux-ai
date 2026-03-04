@@ -96,7 +96,7 @@ export function renderTimeline(stages, container) {
         const expandId = 'expand-' + Math.random().toString(36).substr(2, 9);
         detailsHtml += `
           <div style="margin-top: var(--space-sm);">
-            <button class="btn" style="padding: 2px 8px; font-size: 11px;" onclick="document.getElementById('${expandId}').style.display = document.getElementById('${expandId}').style.display === 'none' ? 'block' : 'none'">
+            <button class="btn" style="padding: 2px 8px; font-size: 11px;" onclick="event.stopPropagation(); document.getElementById('${expandId}').style.display = document.getElementById('${expandId}').style.display === 'none' ? 'block' : 'none'">
               查看原始请求/回应
             </button>
             <div id="${expandId}" style="display: none; margin-top: var(--space-sm); background: var(--bg-primary); padding: var(--space-sm); border-radius: var(--radius-sm); border: 1px solid var(--border-secondary);">

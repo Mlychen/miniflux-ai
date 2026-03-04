@@ -13,6 +13,7 @@ class AppServices:
     entry_processor: Callable[..., Any]
     entries_repository: Any
     ai_news_repository: Any
+    saved_entries_repository: Any
     task_store: Any = None
 
 

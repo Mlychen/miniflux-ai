@@ -23,10 +23,11 @@ class DummyLogger:
         return None
 
 
-def make_config(webhook_secret):
+def make_config(webhook_secret, save_entry_enabled=False):
     miniflux = {}
     if webhook_secret is not None:
         miniflux["webhook_secret"] = webhook_secret
+    miniflux["save_entry_enabled"] = bool(save_entry_enabled)
 
     return Config.from_dict(
         {
@@ -210,6 +211,103 @@ class TestWebhookAPI(AssertMixin):
             response.get_json(),
             {"status": "ignored", "reason": "save_entry not processed"},
         )
+
+    def test_save_entry_returns_202_and_persists_task_when_enabled(self):
+        secret = "test-secret"
+        config = make_config(webhook_secret=secret, save_entry_enabled=True)
+        tmp_dir = Path(__file__).resolve().parent / ".tmp_webhook_save_entry"
+        tmp_dir.mkdir(exist_ok=True)
+        db_path = tmp_dir / "tasks_save_entry_enabled.db"
+        db_path.unlink(missing_ok=True)
+        task_store = TaskStoreSQLite(path=str(db_path))
+        app = create_app(
+            config=config,
+            miniflux_client=object(),
+            llm_client=object(),
+            logger=DummyLogger(),
+            entry_processor=lambda *a, **k: None,
+            task_store=task_store,
+        )
+        payload = {
+            "event_type": "save_entry",
+            "feed": {"site_url": "https://example.com", "title": "My Feed"},
+            "entry": {
+                "id": 101,
+                "title": "Saved Article",
+                "url": "https://example.com/saved-article",
+                "content": "content",
+            },
+        }
+        body = json.dumps(payload).encode("utf-8")
+        signature = sign_payload(secret, body)
+
+        with app.test_client() as client:
+            response = client.post(
+                "/miniflux-ai/webhook/entries",
+                data=body,
+                content_type="application/json",
+                headers={"X-Miniflux-Signature": signature},
+            )
+
+        self.assertEqual(response.status_code, 202)
+        result = response.get_json()
+        self.assertEqual(result["status"], "accepted")
+        self.assertEqual(result["accepted"], 1)
+        self.assertEqual(result["duplicates"], 0)
+        tasks = task_store.list_tasks()
+        self.assertEqual(len(tasks), 1)
+        self.assertEqual(tasks[0].payload.get("task_type"), "save_entry")
+
+    def test_save_entry_returns_duplicate_when_same_article_replayed(self):
+        secret = "test-secret"
+        config = make_config(webhook_secret=secret, save_entry_enabled=True)
+        tmp_dir = Path(__file__).resolve().parent / ".tmp_webhook_save_entry"
+        tmp_dir.mkdir(exist_ok=True)
+        db_path = tmp_dir / "tasks_save_entry_duplicate.db"
+        db_path.unlink(missing_ok=True)
+        task_store = TaskStoreSQLite(path=str(db_path))
+        app = create_app(
+            config=config,
+            miniflux_client=object(),
+            llm_client=object(),
+            logger=DummyLogger(),
+            entry_processor=lambda *a, **k: None,
+            task_store=task_store,
+        )
+        payload = {
+            "event_type": "save_entry",
+            "feed": {"site_url": "https://example.com", "title": "My Feed"},
+            "entry": {
+                "id": 102,
+                "title": "Same Article",
+                "url": "https://example.com/same-article",
+                "content": "content",
+            },
+        }
+        body = json.dumps(payload).encode("utf-8")
+        signature = sign_payload(secret, body)
+
+        with app.test_client() as client:
+            first = client.post(
+                "/miniflux-ai/webhook/entries",
+                data=body,
+                content_type="application/json",
+                headers={"X-Miniflux-Signature": signature},
+            )
+            second = client.post(
+                "/miniflux-ai/webhook/entries",
+                data=body,
+                content_type="application/json",
+                headers={"X-Miniflux-Signature": signature},
+            )
+
+        self.assertEqual(first.status_code, 202)
+        self.assertEqual(second.status_code, 202)
+        self.assertEqual(first.get_json()["accepted"], 1)
+        self.assertEqual(first.get_json()["duplicates"], 0)
+        self.assertEqual(second.get_json()["accepted"], 0)
+        self.assertEqual(second.get_json()["duplicates"], 1)
+        self.assertEqual(len(task_store.list_tasks()), 1)
 
 
 class TestWebhookTaskStoreIntegration(AssertMixin):
