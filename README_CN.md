@@ -93,6 +93,7 @@ app = create_app(
 - [日志过滤指南](docs/LOGGING_FILTER_GUIDE.md)
 - [处理链路追踪指南](docs/PROCESS_TRACE_GUIDE.md)
 - [Debug UI 指南](docs/debug-ui/README.md)
+- [Web UI 接口参考](docs/WEB_UI_API_CN.md)
 
 ## 环境要求
 
@@ -160,51 +161,9 @@ Webhook 模式行为：
   - 启用（`save_entry_enabled: true`）：入队专用 `save_entry` 任务并返回 `202`。
   - 处理逻辑仅写入 `saved_entries` 表，不会回写 Miniflux 条目内容。
 
-任务可观测性 API：
-- `GET /miniflux-ai/user/tasks?status=&limit=&offset=&include_payload=`
-  - 列出持久化任务（`status` 可选，`limit` 默认 `100`，最大 `500`，`include_payload` 默认 `false`）。
-- `GET /miniflux-ai/user/tasks/<task_id>`
-  - 通过 ID 查询单个任务。
-- `GET /miniflux-ai/user/tasks/metrics`
-  - 返回队列和流量指标（`window_seconds` 可选，默认 `300`，范围 `60-3600`）：
-    - 队列水位：`pending/running/retryable/dead/done`, `total`, `backlog`
-    - 可运行深度：`ready_to_claim`, `delayed_retry`
-    - 流量/质量：`throughput_done_per_minute`, `terminal_failure_rate`, `terminal_failure_rate_window`
-    - 重试压力：`retries_total_estimated`, `retries_per_task_estimated`, `avg_attempts_done`, `avg_attempts_dead`
-- `GET /miniflux-ai/user/tasks/failure-groups?status=&error=&error_key=&limit=&offset=`
-  - 按 `status + normalized error_key` 聚合失败任务以便快速分类（`status` 可选：`retryable|dead`）。
-  - `error` 会被归一化为 `error_key`（去除数字/UUID/URL 噪声）以便稳定分组。
-- `GET /miniflux-ai/user/tasks/failure-groups/tasks?status=&error=&error_key=&limit=&offset=&include_payload=`
-  - 从失败分组下钻到具体失败任务样本。
-- `POST /miniflux-ai/user/tasks/failure-groups/requeue`
-  - 按失败分组过滤器重新入队（`status` 可选 `retryable|dead`; `error` 或 `error_key` 可选）。
-- `POST /miniflux-ai/user/tasks/<task_id>/requeue`
-  - 重新入队单个任务（支持源状态：`dead|retryable|running`）到 `pending`。
-- `POST /miniflux-ai/user/tasks/requeue`
-  - 按过滤器批量重新入队（`status` 默认 `dead`; 可选 `error`/`error_key` 归一化分组过滤器; `limit` 默认 `100`）。
+Web UI 与调试接口详情见：
 
-已保存条目查询 API：
-- `GET /miniflux-ai/user/saved-entries?title=&match=&limit=&offset=`
-  - 按标题查询 `save_entry` 管线持久化结果。
-  - 必填：`title`
-  - 可选：
-    - `match`: `prefix`（默认）| `contains` | `exact`
-    - `limit`: 默认 `50`，最大 `500`
-    - `offset`: 默认 `0`
-  - 返回：
-    - 分页字段（`count`, `total`, `limit`, `offset`）
-    - `entries[]`（包含 `canonical_id`, `entry_id`, `title`, `url`, `feed_title`, `save_count`, `first_saved_at`, `last_saved_at`）
-
-Debug UI:
-- 启用 `debug_enabled: true`，然后打开 `/debug/`。
-- `任务排障` 面板支持最小闭环：
-  - 查询失败分组：`GET /miniflux-ai/user/tasks/failure-groups`
-  - 查看分组任务样本：`GET /miniflux-ai/user/tasks/failure-groups/tasks`
-  - 查询任务详情：`GET /miniflux-ai/user/tasks/<task_id>`
-  - 按筛选批量重入队：`POST /miniflux-ai/user/tasks/failure-groups/requeue`
-  - 分组重入队：`POST /miniflux-ai/user/tasks/failure-groups/requeue`
-  - 单任务重入队：`POST /miniflux-ai/user/tasks/<task_id>/requeue`
-- 该面板用于快速定位失败热点（`status + error_key`）并执行人工重试。
+- [Web UI 接口参考](docs/WEB_UI_API_CN.md)
 
 ### 工作流程
 

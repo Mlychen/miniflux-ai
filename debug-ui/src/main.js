@@ -12,6 +12,7 @@ import { initManualProcess } from './modules/manual-process.js';
 import { initProcessTrace } from './modules/traces.js';
 import { initTaskManager } from './modules/tasks.js';
 import { initProcessedEntries, initProcessHistory } from './modules/entries.js';
+import { initSavedEntries } from './modules/saved-entries.js';
 import { initLLMMetrics, initFailedEntries, initLLMCalls, initLLMDuplicates } from './modules/metrics.js';
 
 // 初始化应用
@@ -174,6 +175,21 @@ function initApp() {
     }
   });
 
+  // ========== 保存条目检索模块 ==========
+  initSavedEntries({
+    searchBtn: document.getElementById('btnSavedEntriesSearch'),
+    resetBtn: document.getElementById('btnSavedEntriesReset'),
+    outputEl: document.getElementById('outSavedEntries'),
+    tableBody: document.getElementById('savedEntriesBody'),
+    totalEl: document.getElementById('savedEntriesTotal'),
+    countEl: document.getElementById('savedEntriesCount'),
+    rangeEl: document.getElementById('savedEntriesRange'),
+    titleInput: document.getElementById('savedEntriesTitle'),
+    matchSelect: document.getElementById('savedEntriesMatch'),
+    limitInput: document.getElementById('savedEntriesLimit'),
+    offsetInput: document.getElementById('savedEntriesOffset')
+  });
+
   // ========== 任务管理模块 ==========
   initTaskManager({
     groupsLoadBtn: document.getElementById('btnTaskGroupsLoad'),
@@ -234,6 +250,7 @@ function initApp() {
       document.getElementById('btnMetrics')?.click();
       document.getElementById('btnTaskGroupsLoad')?.click();
       document.getElementById('btnHistory')?.click();
+      document.getElementById('btnSavedEntriesSearch')?.click();
     });
   }
 
@@ -247,7 +264,8 @@ function initApp() {
         'outProcessed',
         'outTaskOps',
         'outHistory',
-        'outLLMCalls'
+        'outLLMCalls',
+        'outSavedEntries'
       ].forEach(function (id) {
         const el = document.getElementById(id);
         if (el) {

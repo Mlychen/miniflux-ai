@@ -40,8 +40,6 @@ def register_saved_entries_query_routes(app):
             )
 
         title = str(request.args.get("title") or "").strip()
-        if not title:
-            return jsonify({"status": "error", "message": "missing title"}), 400
 
         mode = str(request.args.get("match") or "prefix").strip().lower()
         if mode not in {"prefix", "contains", "exact"}:

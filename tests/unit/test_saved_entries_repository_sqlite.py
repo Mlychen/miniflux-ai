@@ -72,3 +72,29 @@ class TestSavedEntriesRepositorySQLite:
         assert contains_rows[0]["canonical_id"] == "canon-2"
         assert len(exact_rows) == 1
         assert exact_rows[0]["canonical_id"] == "canon-1"
+
+    def test_list_missing_feed_title_and_update(self):
+        repo = SavedEntriesRepositorySQLite(
+            path=str(TMP_DIR / "saved_entries_feed_title.db"), lock=threading.Lock()
+        )
+        repo.upsert_saved_entry(
+            canonical_id="canon-1",
+            entry={"id": 1, "title": "Article 1", "url": "https://example.com/1"},
+            feed={},
+            now_ts=1000,
+        )
+        repo.upsert_saved_entry(
+            canonical_id="canon-2",
+            entry={"id": 2, "title": "Article 2", "url": "https://example.com/2"},
+            feed={"title": "Known Feed"},
+            now_ts=1001,
+        )
+
+        missing = repo.list_missing_feed_title(limit=10)
+        assert len(missing) == 1
+        assert missing[0]["canonical_id"] == "canon-1"
+        assert repo.update_feed_title(missing[0]["id"], "Recovered Feed") is True
+
+        rows = repo.search_by_title("article", mode="contains", limit=10, offset=0)
+        row = [r for r in rows if r["canonical_id"] == "canon-1"][0]
+        assert row["feed_title"] == "Recovered Feed"

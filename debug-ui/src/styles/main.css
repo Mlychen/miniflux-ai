@@ -457,6 +457,13 @@ td {
   vertical-align: top;
 }
 
+.saved-title-cell {
+  min-width: 280px;
+  max-width: 520px;
+  white-space: normal;
+  line-height: 1.4;
+}
+
 tbody tr:hover { background: rgba(191, 163, 126, 0.16); }
 
 .mono {

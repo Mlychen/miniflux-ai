@@ -63,6 +63,20 @@ class SavedEntriesRepositorySQLite:
         WHERE canonical_id = ?
     """
 
+    LIST_MISSING_FEED_TITLE_SQL = """
+        SELECT id, canonical_id, entry_id
+        FROM saved_entries
+        WHERE feed_title IS NULL OR TRIM(feed_title) = ''
+        ORDER BY id ASC
+        LIMIT ?
+    """
+
+    UPDATE_FEED_TITLE_SQL = """
+        UPDATE saved_entries
+        SET feed_title = ?
+        WHERE id = ?
+    """
+
     def __init__(self, path: str, lock: Optional[threading.Lock] = None):
         self.db = DatabaseManager(path=path, lock=lock)
         self._init_db()
@@ -192,3 +206,28 @@ class SavedEntriesRepositorySQLite:
                 params,
             ).fetchone()
         return int((row or [0])[0] or 0)
+
+    def list_missing_feed_title(self, limit: int = 200) -> List[Dict[str, Any]]:
+        row_limit = max(1, min(int(limit), 2000))
+        with self.db.connection() as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute(self.LIST_MISSING_FEED_TITLE_SQL, (row_limit,)).fetchall()
+        result = []
+        for row in rows:
+            result.append(
+                {
+                    "id": int(row["id"]),
+                    "canonical_id": str(row["canonical_id"]),
+                    "entry_id": row["entry_id"],
+                }
+            )
+        return result
+
+    def update_feed_title(self, row_id: int, feed_title: str) -> bool:
+        title = str(feed_title or "").strip()
+        if not title:
+            return False
+        with self.db.connection() as conn:
+            cursor = conn.execute(self.UPDATE_FEED_TITLE_SQL, (title, int(row_id)))
+            conn.commit()
+            return cursor.rowcount > 0

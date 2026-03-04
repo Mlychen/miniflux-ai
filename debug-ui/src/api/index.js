@@ -193,6 +193,7 @@ export const API = {
 
   // 已处理条目
   processedEntries: `${API_BASE}/user/processed-entries`,
+  savedEntries: `${API_BASE}/user/saved-entries`,
 
   // Miniflux
   minifluxMe: `${API_BASE}/user/miniflux/me`,
@@ -348,6 +349,23 @@ export async function clearLLMPool(taskId = null) {
  */
 export async function getProcessedEntries(limit = 100, offset = 0) {
   return request('GET', `${API.processedEntries}?limit=${encodeURIComponent(limit)}&offset=${encodeURIComponent(offset)}`);
+}
+
+/**
+ * 按标题查询 save_entry 入库结果
+ * @param {Object} params - 查询参数
+ * @returns {Promise<any>} 查询结果
+ */
+export async function getSavedEntries(params = {}) {
+  const searchParams = new URLSearchParams();
+  if (params.title) searchParams.set('title', params.title);
+  if (params.match) searchParams.set('match', params.match);
+  if (params.limit) searchParams.set('limit', String(params.limit));
+  if (params.offset !== undefined && params.offset !== null) {
+    searchParams.set('offset', String(params.offset));
+  }
+  const queryString = searchParams.toString();
+  return request('GET', queryString ? `${API.savedEntries}?${queryString}` : API.savedEntries);
 }
 
 /**

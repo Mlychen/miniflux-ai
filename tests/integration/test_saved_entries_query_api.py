@@ -70,17 +70,37 @@ class TestSavedEntriesQueryAPI:
         assert payload["total"] == 2
         assert payload["count"] == 2
 
-    def test_query_saved_entries_requires_title(self):
+    def test_query_saved_entries_without_title_returns_all(self):
+        sqlite_path = TMP_DIR / "saved_entries_query_all.db"
+        repository = SavedEntriesRepositorySQLite(path=str(sqlite_path))
+        repository.upsert_saved_entry(
+            canonical_id="canon-a",
+            entry={"id": 21, "title": "One", "url": "https://example.com/a"},
+            feed={"title": "FeedA"},
+            now_ts=2000,
+        )
+        repository.upsert_saved_entry(
+            canonical_id="canon-b",
+            entry={"id": 22, "title": "Two", "url": "https://example.com/b"},
+            feed={"title": "FeedB"},
+            now_ts=2001,
+        )
+
         app = create_app(
             config=make_config(),
             miniflux_client=object(),
             llm_client=object(),
             logger=DummyLogger(),
             entry_processor=lambda *a, **k: None,
+            saved_entries_repository=repository,
         )
 
         with app.test_client() as client:
             response = client.get("/miniflux-ai/user/saved-entries")
 
-        assert response.status_code == 400
-        assert response.get_json() == {"status": "error", "message": "missing title"}
+        assert response.status_code == 200
+        payload = response.get_json()
+        assert payload["status"] == "ok"
+        assert payload["title_filter"] == ""
+        assert payload["total"] == 2
+        assert payload["count"] == 2

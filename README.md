@@ -180,6 +180,7 @@ app = create_app(
 - [Logging Filter Guide](docs/LOGGING_FILTER_GUIDE.md)
 - [Process Trace Guide](docs/PROCESS_TRACE_GUIDE.md)
 - [Debug UI Guide](docs/debug-ui/README.md)
+- [Web UI API Reference](docs/WEB_UI_API.md)
 
 ## Requirements
 
@@ -248,54 +249,9 @@ Webhook mode behavior:
   - enabled (`save_entry_enabled: true`): enqueues a dedicated `save_entry` task and returns `202`.
   - processing is store-only: it writes to `saved_entries` table and does not update Miniflux entry content.
 
-Task observability APIs:
+Web UI and debug interface details are documented in:
 
-- `GET /miniflux-ai/user/tasks?status=&limit=&offset=&include_payload=`
-  - List durable tasks (`status` optional, `limit` defaults to `100`, max `500`, `include_payload` defaults to `false`).
-- `GET /miniflux-ai/user/tasks/<task_id>`
-  - Query one task by id.
-- `GET /miniflux-ai/user/tasks/metrics`
-  - Return queue and flow metrics (`window_seconds` optional, default `300`, range `60-3600`):
-    - queue water level: `pending/running/retryable/dead/done`, `total`, `backlog`
-    - runnable depth: `ready_to_claim`, `delayed_retry`
-    - flow/quality: `throughput_done_per_minute`, `terminal_failure_rate`, `terminal_failure_rate_window`
-    - retry pressure: `retries_total_estimated`, `retries_per_task_estimated`, `avg_attempts_done`, `avg_attempts_dead`
-- `GET /miniflux-ai/user/tasks/failure-groups?status=&error=&error_key=&limit=&offset=`
-  - Aggregate failed tasks by `status + normalized error_key` for quick triage (`status` optional: `retryable|dead`).
-  - `error` will be normalized into `error_key` (numbers/UUID/URL noise removed) for stable grouping.
-- `GET /miniflux-ai/user/tasks/failure-groups/tasks?status=&error=&error_key=&limit=&offset=&include_payload=`
-  - Drill down from failure groups to concrete failed task samples.
-- `POST /miniflux-ai/user/tasks/failure-groups/requeue`
-  - Requeue by failure group filter (`status` optional `retryable|dead`; `error` or `error_key` optional).
-- `POST /miniflux-ai/user/tasks/<task_id>/requeue`
-  - Requeue one task (supported source states: `dead|retryable|running`) to `pending`.
-- `POST /miniflux-ai/user/tasks/requeue`
-  - Batch requeue by filter (`status` default `dead`; optional `error`/`error_key` normalized group filter; `limit` default `100`).
-
-Saved entries API:
-
-- `GET /miniflux-ai/user/saved-entries?title=&match=&limit=&offset=`
-  - Query persisted saved-entry records by title.
-  - Required: `title`.
-  - Optional:
-    - `match`: `prefix` (default) | `contains` | `exact`
-    - `limit`: default `50`, max `500`
-    - `offset`: default `0`
-  - Returns:
-    - pagination fields (`count`, `total`, `limit`, `offset`)
-    - `entries[]` with `canonical_id`, `entry_id`, `title`, `url`, `feed_title`, `save_count`, `first_saved_at`, `last_saved_at`.
-
-Debug UI:
-
-- Enable `debug_enabled: true`, then open `/debug/`.
-- `任务排障` 面板支持最小闭环：
-  - 查询失败分组：`GET /miniflux-ai/user/tasks/failure-groups`
-  - 查看分组任务样本：`GET /miniflux-ai/user/tasks/failure-groups/tasks`
-  - 查询任务详情：`GET /miniflux-ai/user/tasks/<task_id>`
-  - 按筛选批量重入队：`POST /miniflux-ai/user/tasks/failure-groups/requeue`
-  - 分组重入队：`POST /miniflux-ai/user/tasks/failure-groups/requeue`
-  - 单任务重入队：`POST /miniflux-ai/user/tasks/<task_id>/requeue`
-- 该面板用于快速定位失败热点（`status + error_key`）并执行人工重试。
+- [Web UI API Reference](docs/WEB_UI_API.md)
 
 ### Working Method
 

@@ -155,6 +155,74 @@ def my_schedule(services, entry_mode):
 
 def create_task_record_processor(services):
     """Create processor for durable task records."""
+    feed_title_cache = {}
+    feeds_cache_loaded = False
+
+    def _extract_feed_title(feed_obj):
+        if not isinstance(feed_obj, dict):
+            return ""
+        title = str(feed_obj.get("title") or "").strip()
+        if title:
+            return title
+        category = feed_obj.get("category")
+        if isinstance(category, dict):
+            return str(category.get("title") or "").strip()
+        return ""
+
+    def _parse_feed_id(value):
+        text = str(value or "").strip()
+        if text.isdigit():
+            return int(text)
+        return None
+
+    def _resolve_feed_title(entry, feed, logger, miniflux_client):
+        nonlocal feeds_cache_loaded
+
+        title = _extract_feed_title(feed)
+        feed_copy = dict(feed or {})
+        if title:
+            return title, feed_copy
+
+        entry_feed = entry.get("feed")
+        title = _extract_feed_title(entry_feed)
+        if title:
+            if not str(feed_copy.get("title") or "").strip():
+                feed_copy["title"] = title
+            return title, feed_copy
+
+        feed_id = _parse_feed_id(feed_copy.get("id"))
+        if feed_id is None and isinstance(entry_feed, dict):
+            feed_id = _parse_feed_id(entry_feed.get("id"))
+        if feed_id is None:
+            feed_id = _parse_feed_id(entry.get("feed_id"))
+        if feed_id is None:
+            return "", feed_copy
+
+        cached_title = str(feed_title_cache.get(feed_id) or "").strip()
+        if cached_title:
+            if not str(feed_copy.get("title") or "").strip():
+                feed_copy["title"] = cached_title
+            return cached_title, feed_copy
+
+        if not feeds_cache_loaded and miniflux_client is not None:
+            try:
+                feeds = miniflux_client.get_feeds() or []
+                for item in feeds:
+                    if not isinstance(item, dict):
+                        continue
+                    item_id = _parse_feed_id(item.get("id"))
+                    item_title = _extract_feed_title(item)
+                    if item_id is not None and item_title:
+                        feed_title_cache[item_id] = item_title
+                feeds_cache_loaded = True
+            except Exception as e:
+                if logger and hasattr(logger, "warning"):
+                    logger.warning(f"save_entry: failed to load feeds for source resolution error={e}")
+
+        title = str(feed_title_cache.get(feed_id) or "").strip()
+        if title and not str(feed_copy.get("title") or "").strip():
+            feed_copy["title"] = title
+        return title, feed_copy
 
     def process_task(task):
         config = services.config
@@ -184,10 +252,16 @@ def create_task_record_processor(services):
                 raise PermanentTaskError("invalid payload: missing canonical_id")
             if saved_entries_repository is None:
                 raise RuntimeError("saved entries repository is not configured")
+            _, resolved_feed = _resolve_feed_title(
+                entry=entry,
+                feed=feed,
+                logger=logger,
+                miniflux_client=miniflux_client,
+            )
             saved_entries_repository.upsert_saved_entry(
                 canonical_id=canonical_id,
                 entry=entry,
-                feed=feed,
+                feed=resolved_feed,
             )
             return
 
