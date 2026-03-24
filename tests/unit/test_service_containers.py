@@ -10,6 +10,7 @@ from assert_utils import AssertMixin
 from app.infrastructure.ai_news_repository_sqlite import AiNewsRepositorySQLite
 from app.infrastructure.entries_repository_sqlite import EntriesRepositorySQLite
 from app.infrastructure.saved_entries_repository_sqlite import SavedEntriesRepositorySQLite
+from app.infrastructure.summary_archive_repository_sqlite import SummaryArchiveRepositorySQLite
 from app.interfaces.http import create_app
 from app.interfaces.http.services import AppServices, get_app_services
 
@@ -49,9 +50,15 @@ class TestServiceContainers(AssertMixin):
         self.assertIsInstance(services.entries_repository, EntriesRepositorySQLite)
         self.assertIsInstance(services.ai_news_repository, AiNewsRepositorySQLite)
         self.assertIsInstance(services.saved_entries_repository, SavedEntriesRepositorySQLite)
+        self.assertIsInstance(
+            services.summary_archive_repository, SummaryArchiveRepositorySQLite
+        )
         self.assertEqual(services.entries_repository.db.path, 'runtime/miniflux_ai.db')
         self.assertEqual(services.ai_news_repository.db.path, 'runtime/miniflux_ai.db')
         self.assertEqual(services.saved_entries_repository.db.path, 'runtime/miniflux_ai.db')
+        self.assertEqual(
+            services.summary_archive_repository.db.path, 'runtime/miniflux_ai.db'
+        )
 
     def test_create_app_stores_typed_app_services(self):
         app_lock = threading.Lock()
@@ -59,6 +66,9 @@ class TestServiceContainers(AssertMixin):
         entries_repo = EntriesRepositorySQLite(path=str(sqlite_path), lock=app_lock)
         ai_news_repo = AiNewsRepositorySQLite(path=str(sqlite_path), lock=app_lock)
         saved_entries_repo = SavedEntriesRepositorySQLite(path=str(sqlite_path), lock=app_lock)
+        summary_archive_repo = SummaryArchiveRepositorySQLite(
+            path=str(sqlite_path), lock=app_lock
+        )
         app = create_app(
             config=object(),
             miniflux_client=object(),
@@ -68,6 +78,7 @@ class TestServiceContainers(AssertMixin):
             entries_repository=entries_repo,
             ai_news_repository=ai_news_repo,
             saved_entries_repository=saved_entries_repo,
+            summary_archive_repository=summary_archive_repo,
         )
 
         with app.app_context():
@@ -77,11 +88,15 @@ class TestServiceContainers(AssertMixin):
         self.assertEqual(services.entries_repository.db.path, str(sqlite_path))
         self.assertEqual(services.ai_news_repository.db.path, str(sqlite_path))
         self.assertEqual(services.saved_entries_repository.db.path, str(sqlite_path))
+        self.assertEqual(services.summary_archive_repository.db.path, str(sqlite_path))
 
     def test_create_app_prefers_injected_repositories(self):
         entries_repo = EntriesRepositorySQLite(path=str(TMP_DIR / "test_services_2.db"), lock=threading.Lock())
         ai_news_repo = AiNewsRepositorySQLite(path=str(TMP_DIR / "test_services_2.db"), lock=threading.Lock())
         saved_entries_repo = SavedEntriesRepositorySQLite(
+            path=str(TMP_DIR / "test_services_2.db"), lock=threading.Lock()
+        )
+        summary_archive_repo = SummaryArchiveRepositorySQLite(
             path=str(TMP_DIR / "test_services_2.db"), lock=threading.Lock()
         )
         app = create_app(
@@ -93,6 +108,7 @@ class TestServiceContainers(AssertMixin):
             entries_repository=entries_repo,
             ai_news_repository=ai_news_repo,
             saved_entries_repository=saved_entries_repo,
+            summary_archive_repository=summary_archive_repo,
         )
 
         with app.app_context():
@@ -101,6 +117,7 @@ class TestServiceContainers(AssertMixin):
         self.assertIs(services.entries_repository, entries_repo)
         self.assertIs(services.ai_news_repository, ai_news_repo)
         self.assertIs(services.saved_entries_repository, saved_entries_repo)
+        self.assertIs(services.summary_archive_repository, summary_archive_repo)
 
     def test_bootstrap_returns_runtime_services(self):
         cfg = SimpleNamespace(
@@ -133,6 +150,12 @@ class TestServiceContainers(AssertMixin):
         self.assertIsInstance(services.entries_repository, EntriesRepositorySQLite)
         self.assertIsInstance(services.ai_news_repository, AiNewsRepositorySQLite)
         self.assertIsInstance(services.saved_entries_repository, SavedEntriesRepositorySQLite)
+        self.assertIsInstance(
+            services.summary_archive_repository, SummaryArchiveRepositorySQLite
+        )
         self.assertEqual(services.entries_repository.db.path, 'runtime/miniflux_ai.db')
         self.assertEqual(services.ai_news_repository.db.path, 'runtime/miniflux_ai.db')
         self.assertEqual(services.saved_entries_repository.db.path, 'runtime/miniflux_ai.db')
+        self.assertEqual(
+            services.summary_archive_repository.db.path, 'runtime/miniflux_ai.db'
+        )

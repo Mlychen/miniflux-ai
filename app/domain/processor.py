@@ -1,5 +1,4 @@
 import hashlib
-import inspect
 import json
 import re
 import threading
@@ -11,7 +10,7 @@ from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 from ratelimit import limits, sleep_and_retry
 
 from app.domain.entry_rendering import build_summary_entry, render_agent_response
-from app.domain.entry_filter import filter_entry
+from app.domain.entry_filter import filter_entry, is_entry_already_rendered
 from app.observability.trace import get_process_logger
 
 # Initialize process logger
@@ -78,21 +77,8 @@ def make_canonical_id(url, title):
     return hashlib.sha1(key_str.encode("utf-8")).hexdigest()
 
 
-def _build_agent_prefixes(config):
-    start_with_list = [name[1]["title"] for name in config.agents.items()]
-    style_block = [name[1]["style_block"] for name in config.agents.items()]
-    for enabled in style_block:
-        if enabled:
-            start_with_list.append("<blockquote>")
-    return tuple(start_with_list)
-
-
 def _should_preprocess_entry(config, entry):
-    prefixes = _build_agent_prefixes(config)
-    content = entry.get("content") or ""
-    if prefixes and content.startswith(prefixes):
-        return False
-    return True
+    return not is_entry_already_rendered(config, entry)
 
 
 def _build_preprocess_input(entry):
@@ -127,6 +113,34 @@ def _call_llm_with_entry_options(
     """调用 LLM 客户端。"""
     get_result = getattr(llm_client, "get_result")
     return get_result(prompt, request, logger)
+
+
+def _parse_optional_int(value):
+    text = str(value or "").strip()
+    return int(text) if text.isdigit() else None
+
+
+def _extract_feed_id(entry):
+    feed = entry.get("feed")
+    if isinstance(feed, dict):
+        feed_id = _parse_optional_int(feed.get("id"))
+        if feed_id is not None:
+            return feed_id
+    return _parse_optional_int(entry.get("feed_id"))
+
+
+def _extract_feed_title(entry):
+    feed = entry.get("feed")
+    if isinstance(feed, dict):
+        title = str(feed.get("title") or "").strip()
+        if title:
+            return title
+        category = feed.get("category")
+        if isinstance(category, dict):
+            category_title = str(category.get("title") or "").strip()
+            if category_title:
+                return category_title
+    return str(entry.get("feed_title") or "").strip()
 
 
 def _trace_log(trace_id, entry_id, stage, action, status="pending", duration_ms=None, data=None):
@@ -195,6 +209,7 @@ def process_entry(
     logger,
     entries_repository=None,
     processed_entries_repository=None,
+    summary_archive_repository=None,
 ):
     dedup_marker = config.miniflux_dedup_marker
     entry_id = str(entry["id"])
@@ -508,6 +523,42 @@ def process_entry(
                 active_entries_repository.append_summary_item(entry_list)
                 _trace_log(trace_id, entry_id, "save_result", "complete", status="success", duration_ms=int((time.time() - save_start) * 1000), data={"canonical_id": canonical_id})
 
+                if summary_archive_repository is not None:
+                    archive_start = time.time()
+                    try:
+                        summary_archive_repository.append_snapshot(
+                            canonical_id=canonical_id,
+                            trace_id=trace_id,
+                            item=entry_list,
+                            entry=entry,
+                            feed_id=_extract_feed_id(entry),
+                            feed_title=_extract_feed_title(entry),
+                            processed_at=int(time.time()),
+                        )
+                        _trace_log(
+                            trace_id,
+                            entry_id,
+                            "archive_summary",
+                            "complete",
+                            status="success",
+                            duration_ms=int((time.time() - archive_start) * 1000),
+                            data={"canonical_id": canonical_id},
+                        )
+                    except Exception as e:
+                        if logger:
+                            logger.error(
+                                f"Failed to archive summary entry {entry_id} canonical_id={canonical_id}: {e}"
+                            )
+                        _trace_log(
+                            trace_id,
+                            entry_id,
+                            "archive_summary",
+                            "error",
+                            status="error",
+                            duration_ms=int((time.time() - archive_start) * 1000),
+                            data={"canonical_id": canonical_id, "error": str(e)},
+                        )
+
             llm_result = llm_result + render_agent_response(agent[1], response_content)
         else:
              _trace_log(trace_id, entry_id, "agent_process", "skipped", status="skipped", data={"canonical_id": canonical_id, "agent": agent_name, "reason": "filter_mismatch"})
@@ -599,6 +650,7 @@ def build_rate_limited_processor(
     config,
     entries_repository=None,
     processed_entries_repository=None,
+    summary_archive_repository=None,
     processed_news_ids=None,
 ):
     @sleep_and_retry
@@ -649,6 +701,7 @@ def build_rate_limited_processor(
             logger,
             entries_repository=entries_repository,
             processed_entries_repository=processed_entries_repository,
+            summary_archive_repository=summary_archive_repository,
         )
 
     return _processor

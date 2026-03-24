@@ -12,6 +12,7 @@ This project integrates with Miniflux to fetch RSS feed content via API or webho
 - **Schedule Interval**: Specifies the time interval for requesting the miniflux api.
 - **LLM Processing**: Generate summaries, translations, etc. based on your chosen LLM agent.
 - **AI News**: Use the LLM agent to generate AI morning and evening news from feed content.
+- **Durable Summary Archive**: Persist AI summaries to `summary_archive` before the temporary `entries` queue is cleared, enabling later analysis and backfill.
 - **Flexible Configuration**: Easily modify or add new agents via the `config.yml` file.
 - **Markdown and HTML Support**: Outputs in Markdown or styled HTML blocks, depending on configuration.
 
@@ -132,14 +133,14 @@ graph TD
 
 The project uses a task-state architecture with a persistent queue and atomic task claiming:
 
-- **Ingest layer (`myapp/webhook_ingest.py`)**
+- **Ingest layer (`app/interfaces/http/webhook_ingest.py`)**
   - Validate webhook, normalize payload, persist task, return `202` only after durable write.
-- **Worker layer (`core/task_worker.py`)**
+- **Worker layer (`app/application/worker_service.py`)**
   - Claim tasks in batches, process with retry policy, finalize to `done/retry/dead`.
-- **Processor layer (`core/process_entries.py`)**
-  - Pure business logic only (preprocess, agents, rendering, source update), no queue/state orchestration.
-- **Infrastructure layer (`common/*`, `adapters/*`)**
-  - Task store, Miniflux and LLM adapters, observability integration.
+- **Processor layer (`app/domain/processor.py`)**
+  - Business logic only (preprocess, agent execution, rendering, Miniflux update, summary archive persistence), no queue/state orchestration.
+- **Infrastructure layer (`app/infrastructure/*`)**
+  - Task store, Miniflux and LLM adapters, SQLite repositories, observability integration.
 
 Dependency direction: `interface -> application -> domain <- infrastructure`.
 
@@ -152,9 +153,11 @@ For details, see [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 ```python
 import threading
 
-from common.ai_news_repository_sqlite import AiNewsRepositorySQLite
-from common.entries_repository_sqlite import EntriesRepositorySQLite
-from myapp import create_app
+from app.infrastructure.ai_news_repository_sqlite import AiNewsRepositorySQLite
+from app.infrastructure.entries_repository_sqlite import EntriesRepositorySQLite
+from app.infrastructure.saved_entries_repository_sqlite import SavedEntriesRepositorySQLite
+from app.infrastructure.summary_archive_repository_sqlite import SummaryArchiveRepositorySQLite
+from app.interfaces.http import create_app
 
 shared_lock = threading.Lock()
 app = create_app(
@@ -167,6 +170,12 @@ app = create_app(
         path="runtime/miniflux_ai.db", lock=shared_lock
     ),
     ai_news_repository=AiNewsRepositorySQLite(
+        path="runtime/miniflux_ai.db", lock=shared_lock
+    ),
+    saved_entries_repository=SavedEntriesRepositorySQLite(
+        path="runtime/miniflux_ai.db", lock=shared_lock
+    ),
+    summary_archive_repository=SummaryArchiveRepositorySQLite(
         path="runtime/miniflux_ai.db", lock=shared_lock
     ),
 )
@@ -268,6 +277,13 @@ Web UI and debug interface details are documented in:
 
 Data persistence uses `runtime/miniflux_ai.db` as the single source of truth.
 
+Key SQLite tables currently serve different roles:
+
+- `tasks`: durable webhook/polling processing queue
+- `entries`: temporary summary queue consumed by `generate_daily_news()`
+- `summary_archive`: durable AI summary snapshots used for later analysis and backfill
+- `ai_news`: latest generated AI News payload for RSS consumption
+
 ## Docker Setup
 
 The project includes a `docker-compose.yml` file for easy deployment:
@@ -313,6 +329,11 @@ docker-compose up -d
 4. Run lint: `uv run ruff check .`
 5. Run typecheck: `uv run mypy --ignore-missing-imports .`
 6. Run app: `uv run python main.py`
+
+Automated E2E coverage is available for the internal webhook path:
+
+- `uv run pytest tests/integration/test_e2e_webhook_ai_news_flow.py`
+- Covers: `webhook -> task worker -> summary/archive persistence -> ai_news -> rss`
 
 ### Use pip (alternative)
 

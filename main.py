@@ -13,6 +13,7 @@ from app.infrastructure.ai_news_repository_sqlite import AiNewsRepositorySQLite
 from app.infrastructure.config import Config
 from app.infrastructure.entries_repository_sqlite import EntriesRepositorySQLite
 from app.infrastructure.saved_entries_repository_sqlite import SavedEntriesRepositorySQLite
+from app.infrastructure.summary_archive_repository_sqlite import SummaryArchiveRepositorySQLite
 from app.observability.trace import get_logger
 from app.infrastructure.task_store_sqlite import TaskStoreSQLite
 from app.domain.ai_news_helpers import has_ai_news_feed
@@ -75,6 +76,7 @@ class RuntimeServices:
     entries_repository: object
     ai_news_repository: object
     saved_entries_repository: object
+    summary_archive_repository: object
     task_store: object = None
 
 
@@ -350,11 +352,15 @@ def bootstrap(config_path="config.yml"):
     entries_repository = EntriesRepositorySQLite(path=sqlite_path, lock=shared_lock)
     ai_news_repository = AiNewsRepositorySQLite(path=sqlite_path, lock=shared_lock)
     saved_entries_repository = SavedEntriesRepositorySQLite(path=sqlite_path, lock=shared_lock)
+    summary_archive_repository = SummaryArchiveRepositorySQLite(
+        path=sqlite_path, lock=shared_lock
+    )
     processed_news_ids = InMemoryProcessedNewsIds()
     entry_processor = build_rate_limited_processor(
         config,
         entries_repository=entries_repository,
         processed_entries_repository=entries_repository,
+        summary_archive_repository=summary_archive_repository,
         processed_news_ids=processed_news_ids,
     )
 
@@ -367,6 +373,7 @@ def bootstrap(config_path="config.yml"):
         entries_repository=entries_repository,
         ai_news_repository=ai_news_repository,
         saved_entries_repository=saved_entries_repository,
+        summary_archive_repository=summary_archive_repository,
         task_store=task_store,
     )
 

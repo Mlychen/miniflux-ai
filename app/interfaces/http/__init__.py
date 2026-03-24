@@ -9,6 +9,7 @@ from app.infrastructure.miniflux_gateway import MinifluxGatewayError
 from app.infrastructure.ai_news_repository_sqlite import AiNewsRepositorySQLite
 from app.infrastructure.entries_repository_sqlite import EntriesRepositorySQLite
 from app.infrastructure.saved_entries_repository_sqlite import SavedEntriesRepositorySQLite
+from app.infrastructure.summary_archive_repository_sqlite import SummaryArchiveRepositorySQLite
 from app.application.ingest_service import process_entries_batch
 from app.interfaces.http.services import AppServices, get_app_services
 
@@ -22,6 +23,7 @@ def create_app(
     entries_repository=None,
     ai_news_repository=None,
     saved_entries_repository=None,
+    summary_archive_repository=None,
     task_store=None,
 ):
     sqlite_path = getattr(config, "storage_sqlite_path", "runtime/miniflux_ai.db")
@@ -50,6 +52,14 @@ def create_app(
     else:
         app_saved_entries_repository = saved_entries_repository
 
+    if summary_archive_repository is None:
+        summary_archive_lock = threading.Lock()
+        app_summary_archive_repository = SummaryArchiveRepositorySQLite(
+            path=sqlite_path, lock=summary_archive_lock
+        )
+    else:
+        app_summary_archive_repository = summary_archive_repository
+
     app = Flask(__name__)
     app.config["APP_SERVICES"] = AppServices(
         config=config,
@@ -60,6 +70,7 @@ def create_app(
         entries_repository=app_entries_repository,
         ai_news_repository=app_ai_news_repository,
         saved_entries_repository=app_saved_entries_repository,
+        summary_archive_repository=app_summary_archive_repository,
         task_store=task_store,
     )
 

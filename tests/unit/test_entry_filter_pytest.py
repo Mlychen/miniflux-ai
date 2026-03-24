@@ -1,5 +1,5 @@
 from app.infrastructure.config import Config
-from app.domain.entry_filter import filter_entry
+from app.domain.entry_filter import filter_entry, is_entry_already_rendered
 
 
 def make_config(agent_cfg):
@@ -81,3 +81,39 @@ def test_deny_list_not_match():
     agent = next(iter(config.agents.items()))
     entry = make_entry(site_url="https://weibo.com/1906286443/post")
     assert filter_entry(config, agent, entry) is True
+
+
+def test_style_block_allows_natural_blockquote_content():
+    config = make_config(
+        {
+            "title": "AI 摘要：",
+            "style_block": True,
+            "allow_list": None,
+            "deny_list": None,
+        }
+    )
+    agent = next(iter(config.agents.items()))
+    entry = make_entry(
+        content="<blockquote><p>quoted article text</p></blockquote>",
+        site_url="https://example.com/post",
+    )
+    assert is_entry_already_rendered(config, entry) is False
+    assert filter_entry(config, agent, entry) is True
+
+
+def test_style_block_blocks_real_rendered_prefix():
+    config = make_config(
+        {
+            "title": "AI 摘要：",
+            "style_block": True,
+            "allow_list": None,
+            "deny_list": None,
+        }
+    )
+    agent = next(iter(config.agents.items()))
+    entry = make_entry(
+        content="<blockquote>\n  <p><strong>AI 摘要：</strong> 已处理内容\n</p>\n</blockquote><br/>",
+        site_url="https://example.com/post",
+    )
+    assert is_entry_already_rendered(config, entry) is True
+    assert filter_entry(config, agent, entry) is False

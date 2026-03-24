@@ -1,7 +1,7 @@
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
-from app.domain.processor import process_entry
+from app.domain.processor import process_entry, _should_preprocess_entry
 
 
 class DummyLogger:
@@ -89,3 +89,28 @@ def test_all_agents_filtered_marks_processed_repository():
         )
 
     processed_repo.add.assert_called_once()
+
+
+def test_preprocess_not_skipped_for_natural_blockquote_content():
+    entry = {
+        "id": 3,
+        "url": "https://example.com/post3",
+        "title": "t3",
+        "content": "<blockquote><p>quoted article text</p></blockquote>",
+        "feed": {"site_url": "https://example.com/post3", "category": {"title": "c"}},
+        "created_at": "2026-02-28T00:00:00Z",
+    }
+    cfg = SimpleNamespace(
+        miniflux_dedup_marker="DEDUP",
+        agents={
+            "summary": {
+                "title": "AI 摘要：",
+                "style_block": True,
+                "allow_list": None,
+                "deny_list": None,
+                "prompt": "p",
+            }
+        },
+    )
+
+    assert _should_preprocess_entry(cfg, entry) is True

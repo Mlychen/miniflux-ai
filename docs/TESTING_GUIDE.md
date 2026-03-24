@@ -71,6 +71,17 @@ This is the single entry point for test execution, live verification, and LLM te
 - Command:
   - `uv run pytest tests/integration/test_ai_news_api.py`
 
+### e2e-webhook-ai-news
+
+- Scope:
+  - webhook durable task persistence
+  - worker processing to `done`
+  - `entries` and `summary_archive` persistence
+  - `generate_daily_news()` clearing only `entries`
+  - `/miniflux-ai/rss/ai-news` consume-and-clear
+- Command:
+  - `uv run pytest tests/integration/test_e2e_webhook_ai_news_flow.py`
+
 ### batch-usecase
 
 - Scope:
@@ -156,6 +167,10 @@ For release gating and 24h observation criteria, use:
 
 ## 3) End-to-End 测试流程（Miniflux + LLM）
 
+> 区分说明：
+> - 仓库内自动化 E2E：`tests/integration/test_e2e_webhook_ai_news_flow.py`，使用 fake Miniflux / fake LLM。
+> - live smoke：本节流程，连接真实 Miniflux 和真实 LLM。
+
 > 目标：在连上真实 Miniflux 和 LLM 的环境下，从入口到 AI News 输出进行一次完整验证（可用于人工测试或“编程 LLM”执行 e2e 检查）。
 >
 > 调试工具：
@@ -215,7 +230,7 @@ For release gating and 24h observation criteria, use:
 ### Prompt A: Run one module
 
 ```text
-Run miniflux-ai test module: {filter|config|integrity|webhook-api|task-store-sqlite|task-worker|task-query-api|concurrency|ai-news-api|batch-usecase|service-containers|adapters|core-helpers|ai-news-repository-sqlite|entries-repository-sqlite}.
+Run miniflux-ai test module: {filter|config|integrity|webhook-api|task-store-sqlite|task-worker|task-query-api|concurrency|ai-news-api|e2e-webhook-ai-news|batch-usecase|service-containers|adapters|core-helpers|ai-news-repository-sqlite|entries-repository-sqlite}.
 Use uv commands.
 Do not modify code.
 Return:

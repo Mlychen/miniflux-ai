@@ -276,6 +276,7 @@ def test_llm_pool_failed_entries_returns_tasks_from_task_store(tmp_path):
         entries_repository=app.config["APP_SERVICES"].entries_repository,
         ai_news_repository=app.config["APP_SERVICES"].ai_news_repository,
         saved_entries_repository=app.config["APP_SERVICES"].saved_entries_repository,
+        summary_archive_repository=app.config["APP_SERVICES"].summary_archive_repository,
         task_store=task_store,
     )
 

@@ -14,6 +14,7 @@ class AppServices:
     entries_repository: Any
     ai_news_repository: Any
     saved_entries_repository: Any
+    summary_archive_repository: Any
     task_store: Any = None
 
 

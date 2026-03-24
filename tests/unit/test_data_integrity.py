@@ -7,6 +7,9 @@ from assert_utils import AssertMixin
 from app.infrastructure.config import Config
 from app.infrastructure.ai_news_repository_sqlite import AiNewsRepositorySQLite
 from app.infrastructure.entries_repository_sqlite import EntriesRepositorySQLite
+from app.infrastructure.summary_archive_repository_sqlite import (
+    SummaryArchiveRepositorySQLite,
+)
 from app.application.news_service import generate_daily_news, safe_llm_call
 from app.domain.processor import (
     InMemoryProcessedNewsIds,
@@ -110,6 +113,9 @@ class TestDataIntegrity(AssertMixin):
             ]
         )
         entries_repository = EntriesRepositorySQLite(path=str(sqlite_file), lock=threading.Lock())
+        summary_archive_repository = SummaryArchiveRepositorySQLite(
+            path=str(sqlite_file), lock=threading.Lock()
+        )
         process_entry(
             client,
             entry,
@@ -117,12 +123,20 @@ class TestDataIntegrity(AssertMixin):
             llm_client=llm_gateway,
             logger=type("L", (), {"info": lambda *a, **k: None, "error": lambda *a, **k: None})(),
             entries_repository=entries_repository,
+            summary_archive_repository=summary_archive_repository,
         )
 
         saved = entries_repository.read_all()
+        archived = summary_archive_repository.get_by_canonical_id(
+            make_canonical_id(entry["url"], entry["title"])
+        )
         self.assertEqual(len(saved), 1)
+        self.assertEqual(len(archived), 1)
         self.assertEqual(saved[0]["content"], "hello-summary")
         self.assertEqual(saved[0]["id"], make_canonical_id(entry["url"], entry["title"]))
+        self.assertEqual(archived[0]["summary_content"], "hello-summary")
+        self.assertEqual(archived[0]["trace_id"], ANY)
+        self.assertEqual(archived[0]["entry_id"], 101)
         self.assertEqual(saved[0]["ai_category"], "科技")
         self.assertEqual(saved[0]["ai_subject"], "OpenAI")
         self.assertEqual(saved[0]["ai_subject_type"], "公司")
@@ -135,6 +149,134 @@ class TestDataIntegrity(AssertMixin):
         self.assertIn("original content", client.updated[0][1]["content"])
         self.assertNotIn("summary", client.updated[0][1])
         self.assertEqual(len(llm_gateway.calls), 1)
+
+    def test_process_entry_archive_failure_does_not_block_update(self):
+        sqlite_file = TMP_DIR / "entries_archive_failure.db"
+
+        config = Config.from_dict(
+            {
+                "agents": {
+                    "summary": {
+                        "title": "AI summary:",
+                        "prompt": "summarize",
+                        "style_block": True,
+                        "allow_list": None,
+                        "deny_list": None,
+                    }
+                }
+            }
+        )
+        client = DummyMinifluxClient()
+        entry = {
+            "id": 103,
+            "created_at": "2026-02-25T00:00:00Z",
+            "title": "t-archive-fail",
+            "url": "https://example.com/archive-fail",
+            "content": "original content",
+            "feed": {
+                "site_url": "https://example.com",
+                "category": {"title": "News"},
+            },
+        }
+        llm_gateway = DummyLLMGateway(
+            [
+                json.dumps({"summary": "archive-fail-summary"}, ensure_ascii=False),
+            ]
+        )
+        entries_repository = EntriesRepositorySQLite(path=str(sqlite_file), lock=threading.Lock())
+        summary_archive_repository = type(
+            "FailingArchiveRepo",
+            (),
+            {"append_snapshot": lambda *a, **k: (_ for _ in ()).throw(RuntimeError("archive failed"))},
+        )()
+        logger = type(
+            "L",
+            (),
+            {
+                "info": lambda *a, **k: None,
+                "error": lambda *a, **k: None,
+                "debug": lambda *a, **k: None,
+            },
+        )()
+
+        process_entry(
+            client,
+            entry,
+            config,
+            llm_client=llm_gateway,
+            logger=logger,
+            entries_repository=entries_repository,
+            summary_archive_repository=summary_archive_repository,
+        )
+
+        saved = entries_repository.read_all()
+        self.assertEqual(len(saved), 1)
+        self.assertEqual(saved[0]["content"], "archive-fail-summary")
+        self.assertEqual(len(client.updated), 1)
+
+    def test_process_entry_non_summary_agent_does_not_archive(self):
+        sqlite_file = TMP_DIR / "entries_non_summary.db"
+
+        config = Config.from_dict(
+            {
+                "agents": {
+                    "rewrite": {
+                        "title": "AI rewrite:",
+                        "prompt": "rewrite",
+                        "style_block": False,
+                        "allow_list": None,
+                        "deny_list": None,
+                    }
+                }
+            }
+        )
+        client = DummyMinifluxClient()
+        entry = {
+            "id": 104,
+            "created_at": "2026-02-25T00:00:00Z",
+            "title": "t-non-summary",
+            "url": "https://example.com/non-summary",
+            "content": "original content",
+            "feed": {
+                "site_url": "https://example.com",
+                "category": {"title": "News"},
+            },
+        }
+        llm_gateway = DummyLLMGateway(
+            [
+                json.dumps({"summary": "preprocess-only"}, ensure_ascii=False),
+                "rewritten content",
+            ]
+        )
+        entries_repository = EntriesRepositorySQLite(path=str(sqlite_file), lock=threading.Lock())
+        summary_archive_repository = type(
+            "ArchiveSpy",
+            (),
+            {"calls": 0, "append_snapshot": lambda self, *a, **k: setattr(self, "calls", self.calls + 1)},
+        )()
+        logger = type(
+            "L",
+            (),
+            {
+                "info": lambda *a, **k: None,
+                "error": lambda *a, **k: None,
+                "debug": lambda *a, **k: None,
+            },
+        )()
+
+        process_entry(
+            client,
+            entry,
+            config,
+            llm_client=llm_gateway,
+            logger=logger,
+            entries_repository=entries_repository,
+            summary_archive_repository=summary_archive_repository,
+        )
+
+        self.assertEqual(entries_repository.read_all(), [])
+        self.assertEqual(summary_archive_repository.calls, 0)
+        self.assertEqual(len(client.updated), 1)
 
     def test_process_entry_skips_when_already_processed(self):
         sqlite_file = TMP_DIR / "entries_skip.db"
@@ -201,6 +343,7 @@ class TestDataIntegrity(AssertMixin):
         llm_gateway = DummyLLMGateway(["hello", "block", "sum"])
         entries_repository = EntriesRepositorySQLite(path=str(sqlite_file))
         ai_news_repository = AiNewsRepositorySQLite(path=str(sqlite_file))
+        summary_archive_repository = SummaryArchiveRepositorySQLite(path=str(sqlite_file))
         entries_repository.append_summary_items(
             [
                 {
@@ -221,6 +364,18 @@ class TestDataIntegrity(AssertMixin):
                 },
             ]
         )
+        summary_archive_repository.append_snapshot(
+            canonical_id="canon-a1",
+            trace_id="trace-a1",
+            item={
+                "datetime": "2026-02-25T00:00:00Z",
+                "category": "News",
+                "title": "t1",
+                "content": "item-a",
+                "url": "https://example.com/a",
+            },
+            processed_at=1000,
+        )
         generate_daily_news(
             client,
             config,
@@ -235,6 +390,7 @@ class TestDataIntegrity(AssertMixin):
         self.assertIn("sum", result)
         self.assertIn("block", result)
         self.assertEqual(entries_repository.read_all(), [])
+        self.assertEqual(len(summary_archive_repository.list_recent()), 1)
         self.assertEqual(client.refreshed, [77])
         self.assertEqual(len(llm_gateway.calls), 3)
 

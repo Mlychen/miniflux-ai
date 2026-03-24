@@ -1,10 +1,23 @@
 import fnmatch
 
-def filter_entry(config, agent, entry):
-    start_with_list = [name[1]['title'] for name in config.agents.items()]
-    style_block = [name[1]['style_block'] for name in config.agents.items()]
-    [start_with_list.append('<blockquote>') for i in style_block if i]
 
+def build_processed_prefixes(config):
+    prefixes = []
+    for _, agent_cfg in config.agents.items():
+        title = agent_cfg["title"]
+        prefixes.append(title)
+        if agent_cfg.get("style_block"):
+            prefixes.append(f"<blockquote>\n  <p><strong>{title}</strong>")
+    return tuple(prefixes)
+
+
+def is_entry_already_rendered(config, entry):
+    content = entry.get("content") or ""
+    prefixes = build_processed_prefixes(config)
+    return bool(prefixes) and content.startswith(prefixes)
+
+
+def filter_entry(config, agent, entry):
     # Todo Compatible with whitelist/blacklist parameter, to be removed
     allow_list = agent[1].get('allow_list') if agent[1].get('allow_list') is not None else agent[1].get('whitelist')
     deny_list = agent[1]['deny_list'] if agent[1].get('deny_list') is not None else agent[1].get('blacklist')
@@ -14,7 +27,7 @@ def filter_entry(config, agent, entry):
         deny_list = None
 
     # filter, if not content starts with start flag
-    if not entry['content'].startswith(tuple(start_with_list)):
+    if not is_entry_already_rendered(config, entry):
 
         # filter, if in allow_list
         if allow_list is not None:
