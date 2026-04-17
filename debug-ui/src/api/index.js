@@ -140,6 +140,19 @@ export function formatDuration(ms) {
 }
 
 /**
+ * 截断标识符，仅在超长时追加省略号
+ * @param {string} value - 原始标识符
+ * @param {number} maxLen - 最大显示长度
+ * @returns {string} 截断后的标识符
+ */
+export function truncateIdentifier(value, maxLen = 16) {
+  const text = String(value || '').trim();
+  if (!text) return '-';
+  if (text.length <= maxLen) return text;
+  return text.substring(0, maxLen) + '...';
+}
+
+/**
  * HTML 转义
  * @param {string} value - 原始字符串
  * @returns {string} 转义后的字符串

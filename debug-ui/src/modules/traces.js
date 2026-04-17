@@ -12,6 +12,7 @@ import {
   prettyPrint,
   formatTime,
   formatDuration,
+  truncateIdentifier,
   API
 } from '../api/index.js';
 import { getStatusBadgeClass } from './ui.js';
@@ -80,7 +81,7 @@ export function renderTimeline(stages, container) {
 
       if (data.agent) details.push('<span class="timeline-detail-item"><span class="timeline-detail-label">Agent:</span> <span class="timeline-detail-value">' + data.agent + '</span></span>');
       if (data.response_length) details.push('<span class="timeline-detail-item"><span class="timeline-detail-label">响应长度:</span> <span class="timeline-detail-value">' + data.response_length + '</span></span>');
-      if (data.canonical_id) details.push('<span class="timeline-detail-item"><span class="timeline-detail-label">Canonical ID:</span> <span class="timeline-detail-value mono" style="font-size:10px;">' + data.canonical_id.substring(0, 16) + '...</span></span>');
+      if (data.canonical_id) details.push('<span class="timeline-detail-item"><span class="timeline-detail-label">Canonical ID:</span> <span class="timeline-detail-value mono" style="font-size:10px;">' + truncateIdentifier(data.canonical_id, 16) + '</span></span>');
       if (data.ai_category) details.push('<span class="timeline-detail-item"><span class="timeline-detail-label">类别:</span> <span class="timeline-detail-value">' + data.ai_category + '</span></span>');
       if (data.agents_processed) details.push('<span class="timeline-detail-item"><span class="timeline-detail-label">Agents:</span> <span class="timeline-detail-value">' + data.agents_processed + '</span></span>');
       if (data.content_length) details.push('<span class="timeline-detail-item"><span class="timeline-detail-label">内容长度:</span> <span class="timeline-detail-value">' + data.content_length + '</span></span>');
@@ -117,7 +118,7 @@ export function renderTimeline(stages, container) {
         </div>
         <div class="timeline-details">
           <span class="badge ${getStatusBadgeClass(stage.status)}">${statusText}</span>
-          ${stage.duration_ms ? '<span class="timeline-detail-item" style="margin-left:var(--space-sm);"><span class="timeline-detail-label">耗时:</span> <span class="timeline-detail-value">' + formatDuration(stage.duration_ms) + '</span></span>' : ''}
+          ${stage.duration_ms !== null && stage.duration_ms !== undefined ? '<span class="timeline-detail-item" style="margin-left:var(--space-sm);"><span class="timeline-detail-label">耗时:</span> <span class="timeline-detail-value">' + formatDuration(stage.duration_ms) + '</span></span>' : ''}
           ${detailsHtml}
         </div>
       </div>
@@ -165,7 +166,7 @@ export function initProcessTrace(options) {
     statusEl.innerHTML = `<span class="badge ${batchStatusInfo.class}">${batchStatusInfo.text}</span>`;
     durationEl.textContent = formatDuration(summary.total_duration_ms);
     stagesCountEl.textContent = `${summary.success_count || 0}/${summary.total_entries || 0}`;
-    canonicalIdEl.textContent = data.trace_id ? data.trace_id.substring(0, 16) + '...' : '-';
+    canonicalIdEl.textContent = truncateIdentifier(data.trace_id, 16);
     canonicalIdEl.title = data.trace_id || '';
     categoryEl.textContent = `${summary.success_count || 0} 成功 / ${summary.error_count || 0} 失败`;
     summaryEl.style.display = 'block';
@@ -213,7 +214,7 @@ export function initProcessTrace(options) {
           </span>
         </div>
         <div style="font-family: monospace; font-size: 11px; color: var(--text-secondary);">
-          canonical_id: ${entry.canonical_id ? (entry.canonical_id.substring(0, 24) + '...') : '-'}
+          canonical_id: ${truncateIdentifier(entry.canonical_id, 24)}
           ${entry.entry_id ? `<span style="margin-left: var(--space-sm);">entry_id: ${entry.entry_id}</span>` : ''}
         </div>
         <div class="entry-stages-container" style="display: none; margin-top: var(--space-md); border-top: 1px solid var(--border-secondary); padding-top: var(--space-md);"></div>
@@ -443,7 +444,7 @@ export async function loadBatchByTraceId(traceId, options) {
       statusEl.innerHTML = `<span class="badge ${batchStatusInfo.class}">${batchStatusInfo.text}</span>`;
       durationEl.textContent = formatDuration(summary.total_duration_ms);
       stagesCountEl.textContent = `${summary.success_count || 0}/${summary.total_entries || 0}`;
-      canonicalIdEl.textContent = data.trace_id ? data.trace_id.substring(0, 16) + '...' : '-';
+      canonicalIdEl.textContent = truncateIdentifier(data.trace_id, 16);
       canonicalIdEl.title = data.trace_id || '';
       categoryEl.textContent = `${summary.success_count || 0} 成功 / ${summary.error_count || 0} 失败`;
       summaryEl.style.display = 'block';
@@ -491,7 +492,7 @@ export async function loadBatchByTraceId(traceId, options) {
             </span>
           </div>
           <div style="font-family: monospace; font-size: 11px; color: var(--text-secondary);">
-            canonical_id: ${entry.canonical_id ? (entry.canonical_id.substring(0, 24) + '...') : '-'}
+            canonical_id: ${truncateIdentifier(entry.canonical_id, 24)}
             ${entry.entry_id ? `<span style="margin-left: var(--space-sm);">entry_id: ${entry.entry_id}</span>` : ''}
           </div>
           <div class="entry-stages-container" style="display: none; margin-top: var(--space-md); border-top: 1px solid var(--border-secondary); padding-top: var(--space-md);"></div>

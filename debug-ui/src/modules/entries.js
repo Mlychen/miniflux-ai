@@ -12,6 +12,7 @@ import {
   prettyPrint,
   formatTime,
   formatDuration,
+  truncateIdentifier,
   API
 } from '../api/index.js';
 import { getCategoryBadge, showEmptyTableRow, getStatusBadgeClass } from './ui.js';
@@ -290,7 +291,7 @@ export function initProcessHistory(options) {
       const tdTraceId = document.createElement('td');
       tdTraceId.className = 'mono';
       tdTraceId.style.fontSize = '11px';
-      tdTraceId.textContent = (trace.trace_id || '').substring(0, 16) + '...';
+      tdTraceId.textContent = truncateIdentifier(trace.trace_id, 16);
       tdTraceId.title = trace.trace_id || '';
       tr.appendChild(tdTraceId);
 
@@ -396,7 +397,9 @@ export function initProcessHistory(options) {
   async function performSearch() {
     const query = (searchInput.value || '').trim();
     if (!query) {
-      searchStatusEl.textContent = '请输入搜索关键词';
+      if (searchStatusEl) {
+        searchStatusEl.textContent = '请输入搜索关键词';
+      }
       return;
     }
 
@@ -412,7 +415,9 @@ export function initProcessHistory(options) {
       const data = await searchProcessHistory(query);
 
       const queryTypeText = data.query_type === 'entry_id' ? 'Entry ID' : 'Canonical ID';
-      searchStatusEl.textContent = `找到 ${data.total} 个批次 (${queryTypeText}: ${query})`;
+      if (searchStatusEl) {
+        searchStatusEl.textContent = `找到 ${data.total} 个批次 (${queryTypeText}: ${query})`;
+      }
 
       outputEl.textContent = prettyPrint({
         status: data.status,
@@ -427,7 +432,9 @@ export function initProcessHistory(options) {
 
       renderHistory(data.traces || [], true);
     } catch (e) {
-      searchStatusEl.textContent = '搜索失败: ' + e.message;
+      if (searchStatusEl) {
+        searchStatusEl.textContent = '搜索失败: ' + e.message;
+      }
       outputEl.textContent = prettyPrint({ error: e.message, response: e.response || null });
     } finally {
       searchBtn.disabled = false;
@@ -517,7 +524,11 @@ function renderTraceHistory(container, traceGroups, canonicalId) {
   container.appendChild(titleDiv);
 
   // 按时间倒序排列
-  traceGroups.sort((a, b) => b.first_timestamp.localeCompare(a.first_timestamp));
+  traceGroups.sort((a, b) => {
+    const aTime = a.first_timestamp || '';
+    const bTime = b.first_timestamp || '';
+    return bTime.localeCompare(aTime);
+  });
 
   traceGroups.forEach(function (group) {
     const card = document.createElement('div');
@@ -540,13 +551,13 @@ function renderTraceHistory(container, traceGroups, canonicalId) {
         <div style="display: flex; align-items: center; gap: var(--space-sm);">
           <span class="badge ${statusBadgeClass}">${statusText}</span>
           <span style="font-family: var(--font-mono); font-size: 11px; color: var(--text-muted);">
-            ${group.trace_id ? group.trace_id.substring(0, 16) + '...' : '-'}
+            ${truncateIdentifier(group.trace_id, 16)}
           </span>
           ${group.ai_category ? `<span class="badge badge-info">${group.ai_category}</span>` : ''}
         </div>
         <div style="display: flex; align-items: center; gap: var(--space-md); font-size: 12px; color: var(--text-secondary);">
           <span>${formatTime(group.first_timestamp)}</span>
-          ${group.duration_ms ? `<span>${formatDuration(group.duration_ms)}</span>` : ''}
+          ${group.duration_ms !== null && group.duration_ms !== undefined ? `<span>${formatDuration(group.duration_ms)}</span>` : ''}
           <span>${group.stages.length} 阶段</span>
         </div>
       </div>

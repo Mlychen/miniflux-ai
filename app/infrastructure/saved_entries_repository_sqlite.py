@@ -94,6 +94,17 @@ class SavedEntriesRepositorySQLite:
     def _normalize_title(self, title: str) -> str:
         return re.sub(r"\s+", " ", str(title or "").strip().lower())
 
+    def _to_optional_int(self, value: Any) -> Optional[int]:
+        if isinstance(value, bool):
+            return None
+        if isinstance(value, int):
+            return value
+        if isinstance(value, str):
+            text = value.strip()
+            if text.isdigit():
+                return int(text)
+        return None
+
     def _to_row_dict(self, row: sqlite3.Row) -> Dict[str, Any]:
         return {
             "id": int(row["id"]),
@@ -122,7 +133,7 @@ class SavedEntriesRepositorySQLite:
         now = self._now(now_ts)
         title_norm = self._normalize_title(title)
         entry_id_raw = (entry or {}).get("id")
-        entry_id = int(entry_id_raw) if str(entry_id_raw).isdigit() else None
+        entry_id = self._to_optional_int(entry_id_raw)
         url = (entry or {}).get("url")
         content = (entry or {}).get("content")
         feed_title = ""

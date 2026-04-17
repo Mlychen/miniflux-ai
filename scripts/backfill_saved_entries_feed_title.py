@@ -97,6 +97,10 @@ def run_backfill(config_path: str, batch_size: int, max_batches: int) -> Dict[st
             row_id = row.get("id")
             entry_id = row.get("entry_id")
             canonical_id = str(row.get("canonical_id") or "").strip()
+            row_id_int = _parse_int(row_id)
+            if row_id_int is None:
+                stats["skipped"] += 1
+                continue
             if entry_id is None and canonical_id.isdigit():
                 entry_id = int(canonical_id)
             if entry_id is None:
@@ -107,7 +111,7 @@ def run_backfill(config_path: str, batch_size: int, max_batches: int) -> Dict[st
                 if not title:
                     stats["skipped"] += 1
                     continue
-                ok = repository.update_feed_title(int(row_id), title)
+                ok = repository.update_feed_title(row_id_int, title)
                 if ok:
                     stats["updated"] += 1
                 else:

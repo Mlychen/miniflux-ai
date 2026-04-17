@@ -8,6 +8,7 @@ import {
   API,
   formatTime,
   formatDuration,
+  truncateIdentifier,
   escapeHtml
 } from '../api/index.js';
 import { getLLMCalls, getLLMCallDuplicates } from '../api/index.js';
@@ -76,7 +77,7 @@ export function initLLMCalls(options) {
         const a = document.createElement('a');
         a.href = '#';
         a.className = 'link';
-        a.textContent = canonicalId.substring(0, 16) + '...';
+        a.textContent = truncateIdentifier(canonicalId, 16);
         a.title = canonicalId;
         a.addEventListener('click', function (e) {
           e.preventDefault();
@@ -332,7 +333,7 @@ export function initLLMDuplicates(options) {
           const a = document.createElement('a');
           a.href = '#';
           a.className = 'link';
-          a.textContent = canonicalId.substring(0, 16) + '...';
+          a.textContent = truncateIdentifier(canonicalId, 16);
           a.title = canonicalId;
           a.addEventListener('click', function (e) {
             e.preventDefault();
@@ -340,7 +341,7 @@ export function initLLMDuplicates(options) {
           });
           tdCanonical.appendChild(a);
         } else {
-          tdCanonical.textContent = canonicalId ? canonicalId.substring(0, 16) + '...' : '-';
+          tdCanonical.textContent = truncateIdentifier(canonicalId, 16);
         }
         tr.appendChild(tdCanonical);
 
@@ -458,7 +459,7 @@ export function initFailedEntries(options) {
         const a = document.createElement('a');
         a.href = '#';
         a.className = 'link';
-        a.textContent = canonicalId.length > 16 ? canonicalId.substring(0, 16) + '...' : canonicalId;
+        a.textContent = truncateIdentifier(canonicalId, 16);
         a.title = canonicalId;
         a.addEventListener('click', function (e) {
           e.preventDefault();

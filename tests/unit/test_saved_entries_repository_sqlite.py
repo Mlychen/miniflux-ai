@@ -98,3 +98,40 @@ class TestSavedEntriesRepositorySQLite:
         rows = repo.search_by_title("article", mode="contains", limit=10, offset=0)
         row = [r for r in rows if r["canonical_id"] == "canon-1"][0]
         assert row["feed_title"] == "Recovered Feed"
+
+    def test_upsert_saved_entry_handles_optional_integer_entry_id(self):
+        repo = SavedEntriesRepositorySQLite(
+            path=str(TMP_DIR / "saved_entries_optional_int.db"), lock=threading.Lock()
+        )
+        repo.upsert_saved_entry(
+            canonical_id="canon-str",
+            entry={"id": " 123 ", "title": "String Entry ID", "url": "https://example.com/s"},
+            feed={"title": "Feed"},
+            now_ts=1000,
+        )
+        repo.upsert_saved_entry(
+            canonical_id="canon-bool",
+            entry={"id": True, "title": "Boolean Entry ID", "url": "https://example.com/b"},
+            feed={"title": "Feed"},
+            now_ts=1001,
+        )
+        repo.upsert_saved_entry(
+            canonical_id="canon-text",
+            entry={"id": "abc", "title": "Text Entry ID", "url": "https://example.com/t"},
+            feed={"title": "Feed"},
+            now_ts=1002,
+        )
+        repo.upsert_saved_entry(
+            canonical_id="canon-none",
+            entry={"id": None, "title": "None Entry ID", "url": "https://example.com/n"},
+            feed={"title": "Feed"},
+            now_ts=1003,
+        )
+
+        rows = repo.search_by_title("entry id", mode="contains", limit=10, offset=0)
+        by_canonical_id = {row["canonical_id"]: row for row in rows}
+
+        assert by_canonical_id["canon-str"]["entry_id"] == 123
+        assert by_canonical_id["canon-bool"]["entry_id"] is None
+        assert by_canonical_id["canon-text"]["entry_id"] is None
+        assert by_canonical_id["canon-none"]["entry_id"] is None

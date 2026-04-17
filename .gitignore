@@ -173,3 +173,6 @@ cython_debug/
 *.bak
 run_profiling.ps1
 AGENTS.md
+tests/**/.tmp*/
+debug-ui/dist/
+debug-ui/node_modules/
