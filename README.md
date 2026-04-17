@@ -205,7 +205,7 @@ The repository includes template configuration files: `config.sample.English.yml
 > If using a webhook, enter the URL in Settings > Integrations > Webhook > Webhook URL.
 >
 > If deploying in a container alongside Miniflux, use the following URL:
-> http://miniflux_ai/miniflux-ai/webhook/entries.
+> http://ai/miniflux-ai/webhook/entries.
 
 - **Miniflux**: Base URL and API key.
 - **LLM**: Model settings, API key, and endpoint. You can also set `timeout`, `max_workers`, `RPM`, `daily_limit`, `pool_capacity`, `request_expected_retries`, and `request_ttl_seconds`.
@@ -246,7 +246,7 @@ llm:
   request_ttl_seconds: 600
 
 ai_news:
-  url: http://miniflux_ai
+  url: http://ai
 ```
 
 Webhook mode behavior:
@@ -292,8 +292,8 @@ The project includes a `docker-compose.yml` file for easy deployment:
 
 ```yaml
 services:
-    miniflux_ai:
-        container_name: miniflux_ai
+    ai:
+        container_name: miniflux-ai
         image: ghcr.io/qetesh/miniflux-ai:latest
         restart: unless-stopped
         environment:
@@ -309,7 +309,7 @@ Refer to `config.sample.*.yml`, create `config.yml`
 To start the services:
 
 ```bash
-docker-compose up -d
+docker compose up -d
 ```
 
 ## Usage
@@ -325,7 +325,7 @@ docker-compose up -d
 1. Create virtual environment: `uv venv .venv`
 2. Install dependencies: `uv pip install -r requirements-dev.txt`
 3. Run tests:
-   `uv run pytest --cov=core --cov=adapters --cov=myapp tests/`
+   `uv run pytest tests/`
 4. Run lint: `uv run ruff check .`
 5. Run typecheck: `uv run mypy --ignore-missing-imports .`
 6. Run app: `uv run python main.py`
@@ -339,7 +339,7 @@ Automated E2E coverage is available for the internal webhook path:
 
 1. Install development dependencies: `pip install -r requirements-dev.txt`
 2. Run tests:
-   `pytest --cov=core --cov=adapters --cov=myapp tests/`
+   `pytest tests/`
 3. Run lint: `ruff check .`
 4. Run typecheck: `mypy --ignore-missing-imports .`
 

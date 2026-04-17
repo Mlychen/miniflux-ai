@@ -11,14 +11,14 @@
 ## 关键约束
 
 - 浏览器同源规则：页面 origin 与 API origin 需要一致，才能避免 CORS。
-- 局域网可访问：入口需要监听 `0.0.0.0`，并通过安全措施限制访问范围（见 [40-security-lan.md](./40-security-lan.md)）。
+- 局域网可访问：应用需要监听 `0.0.0.0`，并通过网络层安全措施限制访问范围（见 [40-security-lan.md](./40-security-lan.md)）。
 
 ## 总体架构（推荐）
 
-使用一个入口（Nginx/反代）统一对外暴露 `IP:PORT`，通过路径分发：
-- `/debug/` -> Debug UI 静态文件
-- `/miniflux-ai/` -> 反代到 `miniflux-ai`（Flask）
-- （可选）`/` -> Miniflux
+当前仓库的推荐方式是直接使用应用内建的 Debug UI：
+- `/debug/` -> 应用直接返回调试页面与静态资源
+- `/miniflux-ai/` -> 同一 Flask 应用提供调试与业务 API
+- 是否对外暴露由 `debug.host` / `debug.port` 和宿主机网络策略控制
 
 这样 Debug UI 页面里永远用相对路径：
 - `fetch("/miniflux-ai/...")`
@@ -40,13 +40,14 @@
 
 可独立并行：只需知道接口路径与返回结构（见 [10-ui.md](./10-ui.md)、[30-backend.md](./30-backend.md)）。
 
-### Block B：同源入口（Nginx/部署）
+### Block B：应用部署与访问方式
 
 交付物：
-- Nginx 配置：支持 `/debug/` 静态托管与 `/miniflux-ai/` 反代
-- Docker Compose 覆盖文件（推荐），或裸机部署指引
+- `debug.enabled: true` 的配置说明
+- `debug.host` / `debug.port` 的监听说明
+- 裸机或容器环境下的访问指引
 
-可独立并行：不依赖 UI 细节，仅依赖路径约定（见 [20-ingress-nginx.md](./20-ingress-nginx.md)）。
+可独立并行：不依赖 UI 细节，仅依赖路径约定和当前应用内建路由。
 
 ### Block C：后端接口（miniflux-ai）
 
@@ -70,14 +71,15 @@
 ### Block D：局域网安全
 
 交付物：
-- Nginx 白名单（CIDR allowlist）
-- Basic Auth 或 Debug Token（二选一或同时启用）
+- 监听地址约束（例如仅绑定内网 IP）
+- 主机/容器层防火墙、VPN、网段限制
+- 如有需要，外部反代层的附加鉴权方案
 
-注意：安全可以在 Nginx 入口层实现，不必修改 `miniflux-ai`。
+注意：仓库不再维护 Nginx 示例配置；如果你需要外部反代，可自行放在应用前面。
 
 ## 推荐实施顺序（减少返工）
 
-1. Block B：先把同源入口跑通（/miniflux-ai/ 可达），解决 404/跨域根因
+1. Block B：先把应用监听与访问地址跑通（`/debug/` 与 `/miniflux-ai/` 可达）
 2. Block A：实现 Debug UI MVP（三个 GET + 一个 POST）
    - 追加任务排障 MVP（失败分组 + 重入队）
 3. Block D：补齐局域网访问安全

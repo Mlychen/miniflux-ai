@@ -45,14 +45,14 @@ Miniflux with AI
 
 本项目采用基于持久化队列和原子任务认领的任务状态架构：
 
-- **接入层 (`myapp/webhook_ingest.py`)**
+- **接入层 (`app/interfaces/http/webhook_ingest.py`)**
   - 校验 Webhook，规范化 Payload，持久化任务，仅在写入持久化存储后返回 `202`。
-- **Worker 层 (`core/task_worker.py`)**
-  - 批量认领任务，执行重试策略，最终状态流转为 `done/retry/dead`。
-- **处理层 (`core/process_entries.py`)**
-  - 纯业务逻辑（预处理、Agent 执行、渲染、源更新），不涉及队列/状态编排。
-- **基础设施层 (`common/*`, `adapters/*`)**
-  - 任务存储、Miniflux 和 LLM 适配器、可观测性集成。
+- **Worker 层 (`app/application/worker_service.py`)**
+  - 批量认领任务，执行重试策略，最终状态流转为 `done/retryable/dead`。
+- **处理层 (`app/domain/processor.py`)**
+  - 纯业务逻辑（预处理、Agent 执行、渲染、Miniflux 更新、摘要归档），不涉及队列或状态编排。
+- **基础设施层 (`app/infrastructure/*`)**
+  - 任务存储、Miniflux 和 LLM 适配器、SQLite 仓储、可观测性集成。
 
 依赖方向：`interface -> application -> domain <- infrastructure`。
 
@@ -65,9 +65,11 @@ Miniflux with AI
 ```python
 import threading
 
-from common.ai_news_repository_sqlite import AiNewsRepositorySQLite
-from common.entries_repository_sqlite import EntriesRepositorySQLite
-from myapp import create_app
+from app.infrastructure.ai_news_repository_sqlite import AiNewsRepositorySQLite
+from app.infrastructure.entries_repository_sqlite import EntriesRepositorySQLite
+from app.infrastructure.saved_entries_repository_sqlite import SavedEntriesRepositorySQLite
+from app.infrastructure.summary_archive_repository_sqlite import SummaryArchiveRepositorySQLite
+from app.interfaces.http import create_app
 
 shared_lock = threading.Lock()
 app = create_app(
@@ -80,6 +82,12 @@ app = create_app(
         path="runtime/miniflux_ai.db", lock=shared_lock
     ),
     ai_news_repository=AiNewsRepositorySQLite(
+        path="runtime/miniflux_ai.db", lock=shared_lock
+    ),
+    saved_entries_repository=SavedEntriesRepositorySQLite(
+        path="runtime/miniflux_ai.db", lock=shared_lock
+    ),
+    summary_archive_repository=SummaryArchiveRepositorySQLite(
         path="runtime/miniflux_ai.db", lock=shared_lock
     ),
 )
@@ -109,7 +117,7 @@ app = create_app(
 > 如果使用 Webhook，请在 设置 > 集成 > Webhook > Webhook URL 中输入 URL。
 > 
 > 如果与 Miniflux 部署在同一容器网络中，使用以下 URL：
-> http://miniflux_ai/miniflux-ai/webhook/entries
+> http://ai/miniflux-ai/webhook/entries
 
 - **Miniflux**：Base URL 和 API Key。
 - **LLM**：模型设置、API Key 和端点。还可以设置 `timeout`, `max_workers`, `RPM`, `daily_limit`, `pool_capacity`, `request_expected_retries`, 和 `request_ttl_seconds`。
@@ -150,7 +158,7 @@ llm:
   request_ttl_seconds: 600
 
 ai_news:
-  url: http://miniflux_ai
+  url: http://ai
 ```
 
 Webhook 模式行为：
@@ -188,8 +196,8 @@ Web UI 与调试接口详情见：
 
 ```yaml
 services:
-    miniflux_ai:
-        container_name: miniflux_ai
+    ai:
+        container_name: miniflux-ai
         image: ghcr.io/qetesh/miniflux-ai:latest
         restart: unless-stopped
         environment:
@@ -199,12 +207,12 @@ services:
             # 持久化 SQLite DB
             - ./runtime:/app/runtime
 
-```
+``` 
 参考 `config.sample.*.yml` 创建 `config.yml`。
 启动服务：
 
 ```bash
-docker-compose up -d
+docker compose up -d
 ```
 
 ## 使用方法
@@ -220,7 +228,7 @@ docker-compose up -d
 1. 创建虚拟环境：`uv venv .venv`
 2. 安装依赖：`uv pip install -r requirements-dev.txt`
 3. 运行测试：
-   `uv run pytest --cov=core --cov=adapters --cov=myapp tests/`
+   `uv run pytest tests/`
 4. 运行 lint：`uv run ruff check .`
 5. 运行 typecheck：`uv run mypy --ignore-missing-imports .`
 6. 运行应用：`uv run python main.py`
@@ -229,7 +237,7 @@ docker-compose up -d
 
 1. 安装开发依赖：`pip install -r requirements-dev.txt`
 2. 运行测试：
-   `pytest --cov=core --cov=adapters --cov=myapp tests/`
+   `pytest tests/`
 3. 运行 lint：`ruff check .`
 4. 运行 typecheck：`mypy --ignore-missing-imports .`
 

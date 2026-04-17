@@ -58,7 +58,7 @@ llm:
 
 ai_news:
   # docker compose 环境建议使用 miniflux-ai 服务地址
-  url: http://miniflux_ai
+  url: http://ai
   schedule:
     - "07:30"
     - "18:00"
