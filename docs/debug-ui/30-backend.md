@@ -16,7 +16,7 @@
   - 404：entry 不存在
   - 500：处理失败
 
-实现位置：`myapp/__init__.py` 内的 `manual_process`。
+实现位置：`app/interfaces/http/__init__.py` 内的 `manual_process` 路由。
 
 ### 请求池指标
 
@@ -29,21 +29,30 @@
 - 返回：`{"status":"ok","items":[...]}`
 
 items 每项通常包含：
-- `entry_key`
+- `task_id`
+- `canonical_id`
 - `status`
-- `attempts_used`
+- `attempts`
 - `max_attempts`
+- `last_error`
+- `error_key`
+- `next_retry_at`
 - `created_at`
-- `last_attempt_at`
-- `ttl_seconds`
+- `updated_at`
+- `is_ai_news`
 - `url`（可能为空）
+- `title`（可能为空）
 
 ### 清空/重置请求池
 
 - `POST /miniflux-ai/user/llm-pool/clear`
 - body：
-  - `{}`
-  - 或 `{"entry_key":"..."}`
+- `{}`
+- 或 `{"task_id":"..."}` / `{"task_id":123}`
+
+当前语义：
+- 不传 `task_id`：批量将 `dead` 任务重新入队。
+- 传 `task_id`：尝试将单个任务重新入队。
 
 ## 任务排障接口（已实现）
 
@@ -89,7 +98,7 @@ items 每项通常包含：
 
 这些增强不是 Debug UI MVP 的硬要求，但会显著提升排障效率。
 
-### 建议 1：增加 debug 信息接口
+### 建议 1：增加 debug 信息接口（当前未实现）
 
 - `GET /miniflux-ai/debug/info`
 - 返回建议字段：
@@ -112,7 +121,7 @@ items 每项通常包含：
 
 用途：Debug UI 点击一次触发后，可直接按 `trace_id` 查询完整处理链路。
 
-### 建议 3：最近处理记录（轻量审计）
+### 建议 3：最近处理记录（轻量审计，当前未实现）
 
 - `GET /miniflux-ai/debug/recent?limit=50`
 - 返回最近 N 次手动触发的时间、entry_id、结果、耗时、错误摘要
@@ -123,7 +132,7 @@ items 每项通常包含：
 
 - 记录：
   - 请求 URL、方法、耗时
-  - entry_id / entry_key
+  - entry_id / task_id / canonical_id
   - LLM 调用失败原因（不要打印密钥）
 - 对 manual-process：
   - 记录开始与结束（成功/失败），便于快速 grep

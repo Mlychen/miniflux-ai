@@ -46,7 +46,7 @@
 
 ## Debug UI 使用说明（简版）
 
-- 启用 `debug_enabled: true`，然后打开 `/debug/`。
+- 启用 `debug.enabled: true`，然后打开 `/debug/`。
 - `任务排障` 面板支持最小闭环：
   - 查询失败分组：`GET /miniflux-ai/user/tasks/failure-groups`
   - 查看分组任务样本：`GET /miniflux-ai/user/tasks/failure-groups/tasks`

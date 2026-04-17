@@ -148,7 +148,7 @@ For details, see [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 
 ### App Factory Integration
 
-`create_app(...)` takes repository dependencies directly. Typical integration (SQLite, default):
+`create_app(...)` accepts repository dependencies directly. In the default SQLite setup, repositories can be injected explicitly, while `task_store` is required when you want webhook requests to persist into the durable task queue:
 
 ```python
 import threading
@@ -156,7 +156,7 @@ import threading
 from app.infrastructure.ai_news_repository_sqlite import AiNewsRepositorySQLite
 from app.infrastructure.entries_repository_sqlite import EntriesRepositorySQLite
 from app.infrastructure.saved_entries_repository_sqlite import SavedEntriesRepositorySQLite
-from app.infrastructure.summary_archive_repository_sqlite import SummaryArchiveRepositorySQLite
+from app.infrastructure.task_store_sqlite import TaskStoreSQLite
 from app.interfaces.http import create_app
 
 shared_lock = threading.Lock()
@@ -175,7 +175,7 @@ app = create_app(
     saved_entries_repository=SavedEntriesRepositorySQLite(
         path="runtime/miniflux_ai.db", lock=shared_lock
     ),
-    summary_archive_repository=SummaryArchiveRepositorySQLite(
+    task_store=TaskStoreSQLite(
         path="runtime/miniflux_ai.db", lock=shared_lock
     ),
 )
@@ -207,9 +207,10 @@ The repository includes template configuration files: `config.sample.English.yml
 > If deploying in a container alongside Miniflux, use the following URL:
 > http://ai/miniflux-ai/webhook/entries.
 
-- **Miniflux**: Base URL and API key.
+- **Miniflux**: Base URL, API key, `entry_mode`, webhook secret, and durable task settings.
 - **LLM**: Model settings, API key, and endpoint. You can also set `timeout`, `max_workers`, `RPM`, `daily_limit`, `pool_capacity`, `request_expected_retries`, and `request_ttl_seconds`.
 - **AI News**: Schedule and prompts for daily news generation
+- **Debug**: Optional HTTP debug UI binding via `debug.enabled`, `debug.host`, and `debug.port`.
 - **Agents**: Define each agent's prompt, allow_list/deny_list filters, and output style（`style_block` controls whether the output uses an HTML blockquote wrapper）.
 
 ### `config.yml` Sample (Sanitized)
@@ -220,6 +221,8 @@ log_level: "INFO"
 miniflux:
   base_url: https://your-miniflux.example.com
   api_key: YOUR_MINIFLUX_API_KEY
+  # auto: webhook when webhook_secret is present, otherwise polling
+  entry_mode: auto
   webhook_secret: YOUR_MINIFLUX_WEBHOOK_SECRET
   # durable task processing (webhook mode requires task store)
   task_workers: 2
@@ -232,6 +235,8 @@ miniflux:
   save_entry_enabled: false
   # optional: retry cap for save_entry tasks (defaults to task_max_attempts)
   save_entry_max_attempts: 5
+  # optional: polling interval in minutes
+  schedule_interval: 15
 
 llm:
   base_url: https://api.your-llm-provider.com
@@ -247,7 +252,21 @@ llm:
 
 ai_news:
   url: http://ai
+
+debug:
+  enabled: false
+  host: 0.0.0.0
+  port: 8081
 ```
+
+Runtime behavior:
+
+- `miniflux.entry_mode=auto`:
+  - with `webhook_secret`: starts webhook mode
+  - without `webhook_secret`: starts polling mode
+- `miniflux.entry_mode=webhook`: starts Flask + durable task worker and requires `webhook_secret`
+- `miniflux.entry_mode=polling`: starts scheduled polling only
+- Flask HTTP entry is also started when either `ai_news.schedule` or `debug.enabled` is configured, even if entry processing itself uses polling.
 
 Webhook mode behavior:
 
@@ -279,34 +298,29 @@ Data persistence uses `runtime/miniflux_ai.db` as the single source of truth.
 
 Key SQLite tables currently serve different roles:
 
-- `tasks`: durable webhook/polling processing queue
+- `tasks`: durable webhook task queue and retry state store
 - `entries`: temporary summary queue consumed by `generate_daily_news()`
+- `saved_entries`: durable storage for `save_entry` webhook tasks
 - `summary_archive`: durable AI summary snapshots used for later analysis and backfill
 - `ai_news`: latest generated AI News payload for RSS consumption
 
 ## Docker Setup
 
-The project includes a `docker-compose.yml` file for easy deployment:
+The repository already includes a full `docker-compose.yml` for a local stack. It currently defines:
 
-> If using webhook or AI news, it is recommended to use the same docker-compose.yml with miniflux and access it via container name.
+- `db`: PostgreSQL for Miniflux
+- `app`: the Miniflux service itself
+- `ai`: this project (`ghcr.io/qetesh/miniflux-ai:latest`)
+- `rss-bridge`: optional RSS bridge service
 
-```yaml
-services:
-    ai:
-        container_name: miniflux-ai
-        image: ghcr.io/qetesh/miniflux-ai:latest
-        restart: unless-stopped
-        environment:
-            TZ: Asia/Shanghai
-        volumes:
-            - ./config.yml:/app/config.yml
-            # Persist SQLite DB
-            - ./runtime:/app/runtime
+The `ai` service mounts:
 
-```
+- `./config.yml:/app/config.yml`
+- `./runtime:/app/runtime`
 
-Refer to `config.sample.*.yml`, create `config.yml`
-To start the services:
+All services join the same `miniflux-net` bridge network, so webhook and AI News URLs can use container names such as `http://ai/miniflux-ai/webhook/entries`.
+
+Refer to `config.sample.*.yml`, create `config.yml`, then start the stack:
 
 ```bash
 docker compose up -d
@@ -316,7 +330,12 @@ docker compose up -d
 
 1. Ensure `config.yml` is properly configured.
 2. Run the script: `python main.py`
-3. The script will fetch unread RSS entries, process them with the LLM, and update the content in Miniflux.
+3. Entry processing depends on `miniflux.entry_mode`:
+   - `polling`: the scheduler fetches unread entries from Miniflux, processes them with the LLM, and updates Miniflux content.
+   - `webhook`: the app waits for `/miniflux-ai/webhook/entries`, persists accepted tasks, and the durable worker processes them asynchronously.
+   - `auto`: behaves like `webhook` when `webhook_secret` is configured, otherwise like `polling`.
+4. If `ai_news.schedule` is configured, the scheduler also generates AI News and refreshes `/miniflux-ai/rss/ai-news`.
+5. If `debug.enabled` is `true`, the HTTP app also serves the debug UI and debug APIs.
 
 ## Development and Tests
 

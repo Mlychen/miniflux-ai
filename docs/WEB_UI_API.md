@@ -46,7 +46,7 @@ This document contains the API details used by the Debug UI (`/debug/`), includi
 
 ## Debug UI quick notes
 
-- Enable `debug_enabled: true`, then open `/debug/`.
+- Enable `debug.enabled: true`, then open `/debug/`.
 - `任务排障` panel supports a minimum operational loop:
   - Query failure groups: `GET /miniflux-ai/user/tasks/failure-groups`
   - View sample tasks: `GET /miniflux-ai/user/tasks/failure-groups/tasks`

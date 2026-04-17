@@ -9,11 +9,11 @@
 ### 1.1 生成 .pstats
 
 - Webhook/API 路径（包含 Flask test client + webhook/task worker 相关代码）：
-  - `uv run python -m cProfile -o runtime/profile_webhook_api.pstats -m unittest -q tests.test_webhook_api`
+  - `uv run python -m cProfile -o runtime/profile_webhook_api.pstats -m pytest -q tests/integration/test_webhook_api.py`
 - 批处理路径（并发调度与异常聚合）：
-  - `uv run python -m cProfile -o runtime/profile_batch_usecase.pstats -m unittest -q tests.test_batch_usecase`
+  - `uv run python -m cProfile -o runtime/profile_batch_usecase.pstats -m pytest -q tests/unit/test_batch_usecase.py`
 - 数据一致性/存储路径（JSON/SQLite 仓库读写）：
-  - `uv run python -m cProfile -o runtime/profile_data_integrity.pstats -m unittest -q tests.test_data_integrity`
+  - `uv run python -m cProfile -o runtime/profile_data_integrity.pstats -m pytest -q tests/unit/test_data_integrity.py`
 
 ### 1.2 查看 Top 热点（按累计耗时 cumtime）
 
@@ -23,7 +23,7 @@
 
 - 只看某个关键函数/模块：
   - `uv run python -c "import pstats; p=pstats.Stats('runtime/profile_webhook_api.pstats'); p.strip_dirs().sort_stats('cumtime').print_stats('process_entries', 60)"`
-  - `uv run python -c \"import pstats; p=pstats.Stats('runtime/profile_webhook_api.pstats'); p.strip_dirs().sort_stats('cumtime').print_stats('json_storage', 60)\"`
+  - `uv run python -c "import pstats; p=pstats.Stats('runtime/profile_webhook_api.pstats'); p.strip_dirs().sort_stats('cumtime').print_stats('task_store', 60)"`
 
 ## 2) 更贴近真实负载：使用内置 profiling harness（无外部依赖）
 
@@ -73,10 +73,10 @@
 
 ## 4) 常见热点的解读模板
 
-- `common/task_store_sqlite.py` / `common/sqlite_manager.py` 高占比：优先检查任务 claim/update 查询与索引是否匹配。
+- `app/infrastructure/task_store_sqlite.py` / `app/infrastructure/sqlite_manager.py` 高占比：优先检查任务 claim/update 查询与索引是否匹配。
 - `markdown.py` 高占比：说明渲染开销高，agent 多/文本长时会放大。
 - `re.py` / `_parse_preprocess_output` 高占比：说明正则回退路径在处理异常文本。
-- `core/task_worker.py` 高占比且吞吐低：优先检查 worker 参数（batch/lease/poll）和重试抖动。
+- `app/application/worker_service.py` 高占比且吞吐低：优先检查 worker 参数（batch/lease/poll）和重试抖动。
 
 ## 5) Windows 提示
 

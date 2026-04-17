@@ -145,7 +145,7 @@ GET /miniflux-ai/user/process-trace/{entry_id}
 ### 获取处理历史
 
 ```bash
-GET /miniflux-ai/user/process-history?limit=20&offset=0
+GET /miniflux-ai/user/process-history?limit=20
 ```
 
 响应示例：
@@ -153,18 +153,16 @@ GET /miniflux-ai/user/process-history?limit=20&offset=0
 {
   "status": "ok",
   "total": 100,
-  "offset": 0,
   "limit": 20,
   "traces": [
     {
-      "entry_id": "123",
       "trace_id": "abc123...",
+      "start_time": "2026-02-28T10:30:00.000Z",
       "status": "success",
-      "total_duration_ms": 11234,
-      "stages_count": 15,
-      "canonical_id": "def456...",
-      "ai_category": "AI",
-      "start_time": "2026-02-28T10:30:00.000Z"
+      "total_entries": 3,
+      "success_count": 3,
+      "error_count": 0,
+      "duration_ms": 11234
     },
     ...
   ]
@@ -225,7 +223,7 @@ GET /miniflux-ai/user/process-history?limit=20&offset=0
 ## 配置选项
 
 ### 日志级别
-在 `common/logger.py` 中可调整日志级别：
+可通过 `app/observability/trace.py` 中的 `get_process_logger(...)` 调整日志级别：
 ```python
 process_logger = get_process_logger(log_level='DEBUG')  # 默认 DEBUG
 ```

@@ -7,9 +7,9 @@
 2. 安装依赖：
    - `uv pip install -r requirements-dev.txt`
 3. 运行全量回归：
-   - `uv run python -m unittest discover -q tests`
+   - `uv run pytest tests/`
 4. 关键模块最小回归（可选快速）：
-   - `uv run python -m unittest -q tests.test_task_store_sqlite tests.test_task_worker tests.test_task_query_api tests.test_webhook_api`
+   - `uv run pytest tests/unit/test_task_store_sqlite.py tests/unit/test_task_worker.py tests/integration/test_task_query_api.py tests/integration/test_webhook_api.py`
 
 ## 2) Runtime Smoke Test
 

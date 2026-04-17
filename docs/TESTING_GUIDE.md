@@ -151,7 +151,7 @@ This is the single entry point for test execution, live verification, and LLM te
 1. Bootstrap:
    - `uv run python -c "from main import bootstrap; s=bootstrap('config.yml'); print('bootstrap ok')"`
 2. Miniflux connectivity:
-   - `uv run python -c "import miniflux; from common.config import Config; c=Config.from_file('config.yml'); cli=miniflux.Client(c.miniflux_base_url, api_key=c.miniflux_api_key); print(cli.me().get('username'))"`
+   - `uv run python -c "from main import bootstrap; s=bootstrap('config.yml'); print(s.miniflux_client.me().get('username'))"`
 3. Webhook checks:
     - invalid signature -> expect `403`
     - valid signature -> expect `202` (accepted only after durable task persistence)
@@ -183,10 +183,11 @@ For release gating and 24h observation criteria, use:
 
 1. 启动应用
    - 轮询或 webhook 入口根据 `miniflux.entry_mode` 自动决定：
-     - `webhook` 或 `auto`+有 `webhook_secret`：仅启动 webhook（Flask + durable task worker）
-     - `polling`：仅启动轮询
+      - `webhook` 或 `auto`+有 `webhook_secret`：仅启动 webhook（Flask + durable task worker）
+      - `polling`：仅启动轮询
+      - 若配置了 `ai_news.schedule` 或 `debug.enabled`，也会启动 Flask HTTP 入口
    - 本地/服务器启动命令示例：
-     - `uv run python main.py *>> .\miniflux-ai.log`
+      - `uv run python main.py *>> .\miniflux-ai.log`
 
 2. Miniflux 连接与入口校验
    - 运行 Live Integration Flow 中的：
