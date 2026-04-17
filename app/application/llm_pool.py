@@ -4,7 +4,6 @@ import time
 from typing import Any, Callable, Dict, Optional, Tuple
 
 from app.infrastructure.protocols import LLMClientProtocol
-from app.observability.trace import ensure_logger
 
 
 class LLMRequestPool:

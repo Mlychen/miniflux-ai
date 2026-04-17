@@ -8,8 +8,6 @@ import ast
 import inspect
 import re
 import socket
-import subprocess
-import sys
 import tempfile
 import threading
 import time
@@ -210,10 +208,6 @@ class TestFlaskStartup:
 
     def test_flask_app_starts_on_random_port(self):
         """测试 Flask 应用能在随机端口启动并响应请求"""
-        import threading
-        import time
-        from unittest.mock import MagicMock, patch
-
         from app.interfaces.http import create_app
 
         # 找一个空闲端口
@@ -254,7 +248,7 @@ class TestFlaskStartup:
             req = urllib.request.Request(url, method="GET")
             # 即使返回 404 或其他状态，只要能连接就说明服务器在运行
             urllib.request.urlopen(req, timeout=5)
-        except urllib.error.HTTPError as e:
+        except urllib.error.HTTPError:
             # 任何 HTTP 响应都说明服务器在运行
             pass
         except Exception as e:
